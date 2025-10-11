@@ -1,0 +1,1 @@
+"""Pacote contendo utilidades para o aplicativo NutriSigno."""

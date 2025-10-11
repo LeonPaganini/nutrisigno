@@ -1,0 +1,14 @@
+[theme]
+primaryColor = "#66BB6A"      # Verde suave
+backgroundColor = "#F5F5F5"    # Fundo claro
+secondaryBackgroundColor = "#FFFFFF"
+textColor = "#333333"
+font = "sans serif"
+
+[server]
+headless = true
+enableCORS = false
+port = 8501
+
+[browser]
+gatherUsageStats = false
