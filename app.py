@@ -16,7 +16,7 @@ from typing import Dict, Any
 
 import streamlit as st
 
-from modules import firebase_utils, openai_utils, pdf_generator, email_utils
+from modules import firebase_utils, openai_utils, pdf_generator, email_utils, dashboard_utils
 import io
 
 # Caminho das imagens enviadas
@@ -79,7 +79,14 @@ def main():
     )
 
     # Barra de progresso
-    total_steps = 4
+    # Com a introdução do painel de insights, temos 6 etapas no total:
+    # 1: Dados pessoais
+    # 2: Avaliação nutricional
+    # 3: Avaliação psicológica
+    # 4: Avaliação geral
+    # 5: Painel de insights
+    # 6: Pagamento e geração do plano
+    total_steps = 6
     progress = (st.session_state.step - 1) / total_steps
     st.progress(progress)
 
@@ -219,7 +226,112 @@ def main():
                 next_step()
 
     elif st.session_state.step == 5:
-        st.header("Pagamento e geração do plano")
+        """Painel de insights.
+
+        Nesta etapa, o usuário visualiza métricas derivadas dos dados fornecidos
+        nas etapas anteriores. São exibidos gráficos e textos interpretativos
+        combinando ciência da nutrição com uma pitada de astrologia. A partir
+        deste painel, o usuário pode exportar os insights para PDF ou uma imagem
+        para redes sociais e, quando desejar, avançar para a geração do plano
+        alimentar mediante pagamento.
+        """
+        st.header("5. Painel de insights")
+        # Computar insights e gráficos
+        insights = dashboard_utils.compute_insights(st.session_state.data)
+        charts = dashboard_utils.generate_dashboard_charts(insights)
+        # Exibir métricas
+        st.subheader("Resumo dos indicadores")
+        # Define card templates with custom HTML to resemble dashboard cards
+        def make_card(title: str, value: str, description: str = "") -> str:
+            return f"""
+                <div style="background-color: #F7F7F7; padding: 16px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                    <h4 style="margin: 0; color: #333;">{title}</h4>
+                    <p style="margin: 4px 0 0; font-size: 24px; font-weight: bold; color: #007BFF;">{value}</p>
+                    <p style="margin: 2px 0 0; font-size: 12px; color: #555;">{description}</p>
+                </div>
+            """
+        # Build card contents
+        cards = []
+        if insights.get("bmi"):
+            cards.append(make_card(
+                "IMC",
+                f"{insights['bmi']:.1f}",
+                insights.get("bmi_category", "")
+            ))
+        cards.append(make_card(
+            "Hidratação",
+            f"{insights['recommended_water']:.1f} L",
+            insights.get("water_status", "")
+        ))
+        cards.append(make_card(
+            "Escala de Bristol",
+            "",
+            insights.get("bristol", "")
+        ))
+        cards.append(make_card(
+            "Cor da urina",
+            "",
+            insights.get("urine", "")
+        ))
+        if insights.get("mental_notes"):
+            cards.append(make_card(
+                "Nota psicológica",
+                "",
+                insights.get("mental_notes")
+            ))
+        if insights.get("sign_hint"):
+            cards.append(make_card(
+                "Dica do signo",
+                "",
+                insights.get("sign_hint")
+            ))
+        # Display cards in rows of two
+        for i in range(0, len(cards), 2):
+            row = st.columns(2)
+            with row[0]:
+                st.markdown(cards[i], unsafe_allow_html=True)
+            if i + 1 < len(cards):
+                with row[1]:
+                    st.markdown(cards[i + 1], unsafe_allow_html=True)
+        st.markdown("---")
+        st.subheader("Gráficos")
+        for name, fig in charts.items():
+            st.pyplot(fig)
+        st.markdown("### Exportar")
+        # Botão para exportar PDF
+        if st.button("Exportar insights em PDF"):
+            pdf_out = f"/tmp/dashboard_{st.session_state.user_id}.pdf"
+            try:
+                dashboard_utils.create_dashboard_pdf(st.session_state.data, insights, charts, pdf_out)
+                with open(pdf_out, 'rb') as f:
+                    st.download_button(
+                        label="Baixar PDF",
+                        data=f.read(),
+                        file_name=f"nutrisigno_insights_{st.session_state.user_id}.pdf",
+                        mime="application/pdf",
+                    )
+            except Exception as e:
+                st.error(f"Erro ao gerar PDF de insights: {e}")
+        # Botão para exportar imagem
+        if st.button("Baixar imagem para Instagram"):
+            img_out = f"/tmp/insights_{st.session_state.user_id}.png"
+            try:
+                dashboard_utils.create_share_image(insights, charts, img_out)
+                with open(img_out, 'rb') as f:
+                    st.download_button(
+                        label="Baixar imagem",
+                        data=f.read(),
+                        file_name=f"nutrisigno_insights_{st.session_state.user_id}.png",
+                        mime="image/png",
+                    )
+            except Exception as e:
+                st.error(f"Erro ao gerar imagem: {e}")
+        st.markdown("---")
+        # Botão para avançar
+        if st.button("Gerar plano nutricional e prosseguir para pagamento"):
+            next_step()
+    elif st.session_state.step == 6:
+        st.header("6. Pagamento e geração do plano")
         st.write(
             "Para finalizar, realize o pagamento abaixo. Este exemplo utiliza um "
             "botão simbólico; substitua por sua integração de pagamento real em produção."
@@ -252,7 +364,7 @@ def main():
                 except Exception as e:
                     st.error(f"Erro ao gerar o PDF: {e}")
                     return
-                # Envia e-mail
+                # Envia e‑mail
                 try:
                     subject = "Seu Plano Alimentar NutriSigno"
                     body = (
@@ -270,9 +382,9 @@ def main():
                         attachments=attachments,
                     )
                 except Exception as e:
-                    st.error(f"Erro ao enviar e-mail: {e}")
+                    st.error(f"Erro ao enviar e‑mail: {e}")
                     return
-                st.success("Plano gerado e enviado com sucesso! Confira seu e-mail.")
+                st.success("Plano gerado e enviado com sucesso! Confira seu e‑mail.")
         # Caso já exista plano, exibe resumo
         if st.session_state.plan:
             st.subheader("Resumo do Plano")
