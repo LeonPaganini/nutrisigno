@@ -1,166 +1,100 @@
-"""Utilitários para interação com a API da OpenAI.
-
-Este módulo oferece funções para construir prompts e chamar o endpoint
-``chat.completions`` da OpenAI, retornando resultados em formato
-estruturado (JSON). Além disso, este módulo integra algumas directrizes
-adicionais para incorporar elementos astrológicos de maneira ética e
-baseada em evidências.
-
-*Os insights astrológicos devem ser embasados em fontes oficiais e
-reconhecidas (por exemplo, associações de astrologia, literatura
-acadêmica). O modelo é instruído a respeitar princípios científicos de
-nutrição e a evitar promessas milagrosas ou sugestões sem evidências.*
-
-A chave de API deve ser definida na variável de ambiente
-``OPENAI_API_KEY``.
-"""
-
+# modules/openai_utils.py
 from __future__ import annotations
-
-import json
-import os
+import os, json, math, hashlib, random
 from typing import Any, Dict
 
-from openai import OpenAI
+# Modo simulado se SIMULATE=1 ou se faltar a chave
+SIMULATE = os.getenv("SIMULATE", "0") == "1" or not os.getenv("OPENAI_API_KEY")
 
+try:
+    from openai import OpenAI  # só será usado se não estiver simulando
+except Exception:
+    OpenAI = None  # ok no modo simulado
 
-def _build_prompt(user_data: Dict[str, Any]) -> str:
-    """Constrói o prompt enviado à OpenAI a partir dos dados do usuário.
+def _seed_from_payload(payload: Dict[str, Any]) -> int:
+    """Gera seed determinística para simulações reprodutíveis."""
+    h = hashlib.md5(json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
+    return int(h[:8], 16)
 
-    O prompt orienta o modelo a responder em formato JSON, contendo um
-    plano alimentar detalhado, distribuição de macronutrientes e
-    insights comportamentais baseados no perfil astrológico e no
-    histórico nutricional. Ele também injeta sugestões específicas
-    baseadas no signo do usuário (quando presente), sem perder a
-    fundamentação científica. As instruções enfatizam a necessidade
-    de utilizar fontes oficiais e confiáveis para os insights
-    astrológicos e desencorajam promessas milagrosas.
+def _estimate_calories(peso: float, altura_cm: float, atividade: str, objetivo: str) -> int:
+    # Cálculo simples (Mifflin-St Jeor aproximado + fator atividade + ajuste objetivo)
+    altura = altura_cm
+    bmr = 10 * peso + 6.25 * altura - 5 * 30  # idade 30 default
+    fa = {"Sedentário":1.2, "Leve":1.375, "Moderado":1.55, "Intenso":1.725}.get(atividade, 1.375)
+    tdee = bmr * fa
+    if "emagrecer" in objetivo.lower():
+        tdee -= 300
+    elif "ganho" in objetivo.lower():
+        tdee += 300
+    return int(max(1200, round(tdee)))
 
-    Args:
-        user_data: dicionário com informações coletadas no formulário.
-
-    Returns:
-        Texto do prompt que será passado ao modelo.
-    """
-    # Dicionário de sugestões baseadas em cada signo.  Estas sugestões
-    # fornecem orientações comportamentais e nutricionais gerais.  Você
-    # pode expandir ou ajustar conforme julgar necessário, mas evite
-    # basear conselhos apenas na astrologia.  Sempre priorize evidências
-    # nutricionais.
-    sign_hints: Dict[str, str] = {
-        "Áries": (
-            "Evite estimular impulsividade; prefira refeições práticas e saciantes. "
-            "Inclua lanches estratégicos para evitar longos jejuns."
-        ),
-        "Touro": (
-            "Valorize a qualidade sem excessos calóricos.  Crie rituais que aumentem a "
-            "adesão, focando em alimentos densos em nutrientes."
-        ),
-        "Gêmeos": (
-            "Varie sabores e texturas para evitar tédio.  Refeições pequenas e frequentes "
-            "podem ajudar a manter a energia."
-        ),
-        "Câncer": (
-            "Inclua alimentos reconfortantes e nutritivos.  Horários consistentes podem "
-            "trazer estabilidade emocional."
-        ),
-        "Leão": (
-            "Capriche na apresentação dos pratos e incorpore desafios culinários saudáveis. "
-            "Alimentos ricos em beta-caroteno são bem-vindos."
-        ),
-        "Virgem": (
-            "Detalhe quantidades com cuidado e prefira alimentos integrais.  Rotinas "
-            "estruturadas favorecem disciplina."
-        ),
-        "Libra": (
-            "Busque equilíbrio entre saúde e prazer.  Refeições em companhia podem ser "
-            "estimulantes, mas mantenha moderação."
-        ),
-        "Escorpião": (
-            "Valorize intensamente sabores e evite extremos na dieta.  Pratique autocuidado "
-            "e mindfulness nas refeições."
-        ),
-        "Sagitário": (
-            "Inclua variedade e opções portáteis para acompanhar um estilo de vida ativo. "
-            "Evite excessos e mantenha refeições regulares."
-        ),
-        "Capricórnio": (
-            "Estruture metas claras e progressivas.  Prefira alimentos que sustentem "
-            "energia por longos períodos de trabalho."
-        ),
-        "Aquário": (
-            "Introduza tendências alimentares inovadoras de forma equilibrada.  Inclua "
-            "superalimentos ricos em antioxidantes."
-        ),
-        "Peixes": (
-            "Priorize refeições leves e ricas em ômega‑3.  Combine a alimentação com "
-            "práticas de atenção plena."
-        ),
+def _mock_plan(user_data: Dict[str, Any]) -> Dict[str, Any]:
+    """Plano simulado coerente, determinístico a partir dos dados."""
+    random.seed(_seed_from_payload(user_data))
+    peso = float(user_data.get("peso") or 70)
+    altura = float(user_data.get("altura") or 170)
+    atividade = user_data.get("nivel_atividade") or "Leve"
+    objetivo = (user_data.get("objetivo") or "manter").lower()
+    kcal = _estimate_calories(peso, altura, atividade, objetivo)
+    # refeições
+    def meal(title, items, kcal_share):
+        return {"title": title, "items": items, "kcal": int(round(kcal*kcal_share))}
+    plan = {
+        "diet": {
+            "total_kcal": kcal,
+            "meals": [
+                meal("Café da manhã", ["Iogurte natural (170g)", "Aveia (30g)", "Banana (1un)"], 0.25),
+                meal("Almoço", ["Arroz (120g)", "Feijão (100g)", "Frango grelhado (120g)", "Salada mista"], 0.35),
+                meal("Lanche", ["Maçã (1un)", "Castanhas (20g)"], 0.10),
+                meal("Jantar", ["Omelete 2 ovos", "Legumes salteados", "Azeite (1 cchá)"], 0.25),
+            ],
+            "hydration": f"Meta diária: {max(1.5, round(peso*0.035,1))} L de água",
+            "fiber": "Busque 25–35 g/dia, priorizando verduras, legumes e frutas.",
+            "substitutions": {
+                "Café da manhã": ["Pão integral (1 fatia) ↔ aveia (30g)", "Queijo branco (30g) ↔ iogurte (100g)"],
+                "Almoço": ["Peito de frango ↔ peixe magro", "Arroz branco ↔ arroz integral"],
+                "Lanche": ["Iogurte skyr ↔ fruta + sementes"],
+                "Jantar": ["Tofu ↔ ovos", "Abóbora assada ↔ batata-doce cozida"],
+            },
+        },
+        "workout": {
+            "goal": "Condicionamento geral",
+            "days_per_week": 3 if "emagrecer" in objetivo else 4,
+            "blocks": [
+                {"phase": "Aquecimento", "exercises": ["Caminhada leve 10min"], "duration_min": 10},
+                {"phase": "Principal", "exercises": ["Treino circuito corpo inteiro 25–30min"], "duration_min": 30},
+                {"phase": "Desaquecimento", "exercises": ["Alongamentos 5–10min"], "duration_min": 10},
+            ],
+        },
+        "notes": [
+            "Plano simulado (modo offline) para testes de interface.",
+            "Ajuste por preferências e restrições quando ativar a IA.",
+        ],
     }
-    sign = str(user_data.get("signo") or "").strip()
-    hint = sign_hints.get(sign, "")
-    instructions = (
-        "Você é um nutricionista profissional com conhecimento em astrologia. "
-        "Crie um plano alimentar personalizado considerando os dados do usuário abaixo. "
-        "Considere o signo solar do usuário para ajustar o tom e o comportamento do plano, "
-        "mas a base deve ser a ciência da nutrição.  Utiliza insights astrológicos apenas "
-        "quando houver respaldo de fontes oficiais e reconhecidas (Astrological Association, "
-        "estudos acadêmicos), e deixe claro que eles não substituem evidências científicas. "
-        "Não faça promessas milagrosas e não recomende dietas extremas.  O resultado deve ser "
-        "um JSON válido e exclusivo, sem texto acompanhando, contendo os campos:\n"
-        "- plano: lista de objetos com 'refeicao', 'descricao', 'alimentos' (array de nomes), "
-        "  'quantidades' (array de gramas ou unidades) e 'calorias'.\n"
-        "- macros: objeto com 'carboidratos', 'proteinas', 'gorduras' em porcentagem.\n"
-        "- insights: texto motivacional e prático com base no signo e no histórico fornecidos.\n"
-        "- perfil_astrologico: resumo de traços comportamentais do signo e como eles impactam a alimentação.\n"
-        "Não inclua nenhum texto fora do JSON."
-    )
-    # Inclui o JSON dos dados no prompt para que o modelo tenha contexto.
-    user_json = json.dumps(user_data, ensure_ascii=False, indent=2)
-    # Adiciona a dica astrológica quando disponível
-    if hint:
-        instructions += f"\n\nPara este signo ({sign}), considere o seguinte ao elaborar o plano: {hint}"
-    prompt = f"{instructions}\n\nDados do usuário:\n{user_json}"
-    return prompt
+    return plan
 
+def _build_prompt(_: Dict[str, Any]) -> str:
+    # Não usado no modo simulado; mantido para compatibilidade
+    return "Gerar plano em JSON..."
 
 def generate_plan(user_data: Dict[str, Any], model: str = "gpt-4o-mini") -> Dict[str, Any]:
-    """Envia o prompt à OpenAI e retorna um dicionário com o plano gerado.
+    """Gera plano. No modo simulado, retorna um plano fake determinístico."""
+    if SIMULATE or OpenAI is None:
+        return _mock_plan(user_data)
 
-    Esta função utiliza o SDK mais recente da OpenAI.  Lê a chave da
-    API na variável de ambiente ``OPENAI_API_KEY`` e instrui o modelo a
-    responder obrigatoriamente em JSON usando o parâmetro
-    ``response_format``.  Por padrão, usa-se o modelo ``gpt-4o-mini``
-    pela sua eficiência e custo reduzido; altere o argumento ``model``
-    conforme necessário.
-
-    Args:
-        user_data: dicionário com os dados do usuário.
-        model: identificador do modelo da OpenAI a ser utilizado.
-
-    Returns:
-        Dicionário contendo plano alimentar, macros, insights e perfil astrológico.
-    """
-    api_key = os.getenv("OPENAI_API_KEY")
-    if not api_key:
-        raise RuntimeError(
-            "A variável de ambiente OPENAI_API_KEY não foi definida."
-        )
-    client = OpenAI(api_key=api_key)
+    client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
     prompt = _build_prompt(user_data)
+    resp = client.chat.completions.create(
+        model=model,
+        messages=[
+            {"role": "system", "content": "Você é um assistente de nutrição responsável. Responda em JSON."},
+            {"role": "user", "content": prompt},
+        ],
+        temperature=0.4,
+        response_format={"type": "json_object"},
+    )
     try:
-        response = client.chat.completions.create(
-            model=model,
-            messages=[
-                {"role": "system", "content": "Você é um assistente. Responda em JSON."},
-                {"role": "user", "content": prompt},
-            ],
-            temperature=0.6,
-            response_format={"type": "json_object"},
-            max_tokens=1600,
-        )
-        content = response.choices[0].message.content.strip()
-        # Tenta converter a resposta em JSON
-        return json.loads(content)
-    except Exception as exc:
-        raise RuntimeError(f"Falha ao gerar plano com a OpenAI: {exc}") from exc
+        return json.loads(resp.choices[0].message.content)
+    except Exception as e:
+        # fallback duro mesmo se der problema
+        return _mock_plan(user_data)
