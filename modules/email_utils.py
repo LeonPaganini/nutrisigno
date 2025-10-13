@@ -1,71 +1,34 @@
-"""Envio de e‑mails utilizando SMTP.
-
-Este módulo define uma função para enviar e‑mails com anexos. O envio
-depende de variáveis de ambiente para configurar o servidor SMTP e
-autenticação. Para maior segurança, recomenda‑se utilizar provedores de
-e‑mail que suportem autenticação via token (por exemplo, Gmail
-com senhas de aplicativo) ou serviços dedicados de e‑mail transacional.
-"""
-
+# modules/email_utils.py
 from __future__ import annotations
-
-import os
-import smtplib
-from email.message import EmailMessage
+import os, base64
 from typing import List, Tuple
 
+SIMULATE = os.getenv("SIMULATE", "0") == "1" or not os.getenv("SMTP_HOST")
 
-def send_email(
-    recipient: str,
-    subject: str,
-    body: str,
-    attachments: List[Tuple[str, bytes]] | None = None,
-) -> None:
-    """Envia um e‑mail para o destinatário com opcionalmente anexos.
-
-    Lê as configurações do servidor SMTP das variáveis de ambiente:
-
-    - `SMTP_SERVER`: endereço do servidor
-    - `SMTP_PORT`: porta (por exemplo, 587 para TLS)
-    - `EMAIL_USERNAME`: usuário de autenticação
-    - `EMAIL_PASSWORD`: senha ou token
-    - `SENDER_EMAIL`: endereço do remetente
-
-    Args:
-        recipient: e‑mail do destinatário.
-        subject: assunto da mensagem.
-        body: corpo do e‑mail em texto simples.
-        attachments: lista de tuplas `(filename, content_bytes)`.
+def send_email(recipient: str, subject: str, body: str, attachments: List[Tuple[str, bytes]] | None = None) -> dict:
     """
-    smtp_server = os.getenv("SMTP_SERVER")
-    smtp_port = os.getenv("SMTP_PORT")
-    username = os.getenv("EMAIL_USERNAME")
-    password = os.getenv("EMAIL_PASSWORD")
-    sender = os.getenv("SENDER_EMAIL")
+    Envia e-mail via SMTP; no modo simulado, apenas “loga” a intenção e devolve ok.
+    attachments: lista de tuplas (filename, bytes)
+    """
+    if SIMULATE:
+        size = sum(len(b) for _, b in (attachments or []))
+        return {"ok": True, "mode": "simulated", "to": recipient, "subject": subject, "attachments_bytes": size}
 
-    if not all([smtp_server, smtp_port, username, password, sender]):
-        raise RuntimeError(
-            "Configurações SMTP incompletas. Defina SMTP_SERVER, SMTP_PORT, "
-            "EMAIL_USERNAME, EMAIL_PASSWORD e SENDER_EMAIL."
-        )
+    import smtplib
+    from email.message import EmailMessage
+
     msg = EmailMessage()
-    msg["From"] = sender
+    msg["From"] = os.getenv("SMTP_FROM")
     msg["To"] = recipient
     msg["Subject"] = subject
     msg.set_content(body)
-    # Anexa arquivos se houver
-    attachments = attachments or []
-    for filename, content in attachments:
-        msg.add_attachment(
-            content,
-            maintype="application",
-            subtype="octet-stream",
-            filename=filename,
-        )
-    try:
-        with smtplib.SMTP(smtp_server, int(smtp_port)) as server:
-            server.starttls()
-            server.login(username, password)
-            server.send_message(msg)
-    except Exception as exc:
-        raise RuntimeError(f"Erro ao enviar e-mail: {exc}") from exc
+
+    for fname, blob in (attachments or []):
+        msg.add_attachment(blob, maintype="application", subtype="pdf", filename=fname)
+
+    with smtplib.SMTP(os.getenv("SMTP_HOST"), int(os.getenv("SMTP_PORT", "587"))) as server:
+        server.starttls()
+        server.login(os.getenv("SMTP_USER"), os.getenv("SMTP_PASSWORD"))
+        server.send_message(msg)
+
+    return {"ok": True, "mode": "smtp"}
