@@ -18,6 +18,9 @@ import streamlit as st
 
 from modules import firebase_utils, openai_utils, pdf_generator, email_utils, dashboard_utils
 import io
+import os
+
+SIMULATE = os.getenv("SIMULATE", "0") == "1"
 
 # Caminho das imagens enviadas
 PATH_BRISTOL = "assets/escala_bistrol.jpeg"
