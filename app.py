@@ -1,30 +1,35 @@
 """Aplicação principal do NutriSigno.
 
-Esta aplicação Streamlit coleta dados do usuário em quatro etapas,
+Esta aplicação Streamlit coleta dados do usuário em várias etapas,
 interage com a API da OpenAI para criar um plano alimentar
 personalizado, salva os dados no Firebase e envia um relatório em PDF
-por e‑mail após a confirmação do pagamento.
+por e‑mail após a confirmação do pagamento.  Nesta versão a
+apresentação de dados foi enriquecida com um painel de insights
+personalizados e um mecanismo para reabrir sessões antigas a partir de
+um identificador na URL.
 """
 
 from __future__ import annotations
+
 import os
-from PIL import Image
-import json
 import uuid
 from datetime import date, time
 from typing import Dict, Any
 
+from PIL import Image
 import streamlit as st
 
 from modules import firebase_utils, openai_utils, pdf_generator, email_utils, dashboard_utils
-import io
-import os
 
-SIMULATE = os.getenv("SIMULATE", "0") == "1"
+# When SIMULATE=1 (or unspecified keys are missing) the external
+# services (OpenAI, Firebase and SMTP) will be simulated.  This is
+# configured entirely in the environment and reused by the modules.
+SIMULATE: bool = os.getenv("SIMULATE", "0") == "1"
 
-# Caminho das imagens enviadas
+# Paths to the illustrative images for the Bristol stool scale and urine colour
 PATH_BRISTOL = "assets/escala_bistrol.jpeg"
 PATH_URINA = "assets/escala_urina.jpeg"
+
 
 def get_zodiac_sign(birth_date: date) -> str:
     """Retorna o signo do zodíaco para uma data de nascimento."""
@@ -56,7 +61,8 @@ def get_zodiac_sign(birth_date: date) -> str:
         return "Peixes"
     return ""
 
-def initialize_session():
+
+def initialize_session() -> None:
     """Inicializa variáveis na sessão do Streamlit."""
     if "user_id" not in st.session_state:
         st.session_state.user_id = str(uuid.uuid4())
@@ -69,30 +75,45 @@ def initialize_session():
     if "plan" not in st.session_state:
         st.session_state.plan = None
 
-def next_step():
+
+def next_step() -> None:
+    """Incrementa o contador de etapas da sessão."""
     st.session_state.step += 1
 
-def main():
+
+def main() -> None:
+    """Função principal invocada pelo Streamlit para renderizar a app."""
+    # Configuração da página
     st.set_page_config(page_title="NutriSigno", layout="wide")
     initialize_session()
+
+    # Verifica parâmetros de consulta para reabrir sessões antigas.  Se a URL
+    # contiver ?id=<uuid>, tentamos carregar os dados gravados no Firebase (ou
+    # arquivo local no modo simulado) e pulamos diretamente para o painel de
+    # insights.  Uma flag ``loaded_external`` impede múltiplos carregamentos.
+    params = st.experimental_get_query_params()
+    session_id = params.get("id", [None])[0] if params else None
+    if session_id and not st.session_state.get("loaded_external"):
+        saved_data = firebase_utils.load_user_data(session_id)
+        if saved_data:
+            st.session_state.user_id = session_id
+            st.session_state.data = saved_data
+            st.session_state.step = 5
+            st.session_state.loaded_external = True
+
+    # Título e introdução
     st.title("NutriSigno")
     st.write(
         "Bem‑vindo ao NutriSigno! Preencha as etapas abaixo para receber um plano "
         "alimentar personalizado, combinando ciência e astrologia."
     )
 
-    # Barra de progresso
-    # Com a introdução do painel de insights, temos 6 etapas no total:
-    # 1: Dados pessoais
-    # 2: Avaliação nutricional
-    # 3: Avaliação psicológica
-    # 4: Avaliação geral
-    # 5: Painel de insights
-    # 6: Pagamento e geração do plano
+    # Barra de progresso: há 6 etapas, incluindo o painel de insights e o pagamento
     total_steps = 6
     progress = (st.session_state.step - 1) / total_steps
     st.progress(progress)
 
+    # Etapa 1: dados pessoais
     if st.session_state.step == 1:
         st.header("1. Dados pessoais")
         with st.form("dados_pessoais"):
@@ -110,7 +131,6 @@ def main():
                 if any(field in (None, "") for field in required_fields):
                     st.error("Por favor preencha todos os campos obrigatórios.")
                 else:
-                    # Armazena dados
                     signo = get_zodiac_sign(data_nasc)
                     st.session_state.data.update({
                         "nome": nome,
@@ -125,6 +145,7 @@ def main():
                     })
                     next_step()
 
+    # Etapa 2: avaliação nutricional
     elif st.session_state.step == 2:
         st.header("2. Avaliação nutricional")
         with st.form("avaliacao_nutricional"):
@@ -137,12 +158,15 @@ def main():
                 "Nível de atividade física",
                 ["Sedentário", "Leve", "Moderado", "Intenso"],
             )
-
             st.markdown("---")
             st.subheader("Tipo de Fezes (Escala de Bristol)")
             col_bristol1, col_bristol2 = st.columns([1, 2])
             with col_bristol1:
-                st.image(Image.open(PATH_BRISTOL), caption='Escala de Bristol', use_column_width=True)
+                # Carrega a imagem somente se existir; caso contrário, exibe placeholder
+                try:
+                    st.image(Image.open(PATH_BRISTOL), caption='Escala de Bristol', use_column_width=True)
+                except Exception:
+                    st.info("Imagem da escala de Bristol não encontrada.")
             with col_bristol2:
                 tipo_fezes = st.radio(
                     "Selecione o tipo correspondente:",
@@ -155,14 +179,16 @@ def main():
                         "Tipo 6 - Em pedaços esfarrapados.",
                         "Tipo 7 - Líquidas.",
                     ],
-                    key="tipo_fezes"
+                    key="tipo_fezes",
                 )
-
             st.markdown("---")
             st.subheader("Cor da Urina")
             col_urina1, col_urina2 = st.columns([1, 2])
             with col_urina1:
-                st.image(Image.open(PATH_URINA), caption='Classificação da Urina', use_column_width=True)
+                try:
+                    st.image(Image.open(PATH_URINA), caption='Classificação da Urina', use_column_width=True)
+                except Exception:
+                    st.info("Imagem da escala de cor da urina não encontrada.")
             with col_urina2:
                 cor_urina = st.radio(
                     "Selecione a cor que mais se aproxima da sua urina:",
@@ -175,9 +201,8 @@ def main():
                         "Castanho claro (perigo extremo, MUITO desidratado!)",
                         "Castanho escuro (perigo extremo, MUITO desidratado!)",
                     ],
-                    key="cor_urina"
+                    key="cor_urina",
                 )
-
             submitted = st.form_submit_button("Próximo")
             if submitted:
                 required = [historico, consumo_agua, atividade, tipo_fezes, cor_urina]
@@ -193,8 +218,9 @@ def main():
                     })
                     next_step()
 
+    # Etapa 3: avaliação psicológica e de perfil
     elif st.session_state.step == 3:
-        st.header("3. Avaliação psicológica")
+        st.header("3. Avaliação psicológica e perfil")
         with st.form("avaliacao_psicologica"):
             motivacao = st.slider(
                 "Nível de motivação para mudanças alimentares", 1, 5, 3
@@ -203,19 +229,34 @@ def main():
             habitos = st.text_area(
                 "Descreva brevemente seus hábitos alimentares", value="",
             )
+            energia = st.select_slider(
+                "Como você descreveria sua energia diária?",
+                options=["Baixa", "Moderada", "Alta"],
+                value="Moderada",
+            )
+            impulsividade = st.slider(
+                "Quão impulsivo(a) você é em relação à alimentação?", 1, 5, 3
+            )
+            rotina = st.slider(
+                "Quão importante é para você seguir uma rotina alimentar?", 1, 5, 3
+            )
             submitted = st.form_submit_button("Próximo")
             if submitted:
                 required = [motivacao, estresse, habitos]
                 if any(field in (None, "") for field in required):
-                    st.error("Preencha todos os campos.")
+                    st.error("Preencha todos os campos obrigatórios.")
                 else:
                     st.session_state.data.update({
                         "motivacao": motivacao,
                         "estresse": estresse,
                         "habitos_alimentares": habitos,
+                        "energia_diaria": energia,
+                        "impulsividade_alimentar": impulsividade,
+                        "rotina_alimentar": rotina,
                     })
                     next_step()
 
+    # Etapa 4: avaliação geral
     elif st.session_state.step == 4:
         st.header("4. Avaliação geral")
         with st.form("avaliacao_geral"):
@@ -223,17 +264,18 @@ def main():
                 "Observações adicionais",
                 help="Compartilhe qualquer informação extra que julgue relevante.",
             )
-            submitted = st.form_submit_button("Prosseguir para pagamento")
+            submitted = st.form_submit_button("Prosseguir para insights")
             if submitted:
                 st.session_state.data.update({"observacoes": observacoes})
                 next_step()
 
+    # Etapa 5: painel de insights
     elif st.session_state.step == 5:
         """Painel de insights.
 
         Nesta etapa, o usuário visualiza métricas derivadas dos dados fornecidos
-        nas etapas anteriores. São exibidos gráficos e textos interpretativos
-        combinando ciência da nutrição com uma pitada de astrologia. A partir
+        nas etapas anteriores.  São exibidos gráficos e textos interpretativos
+        combinando ciência da nutrição com uma pitada de astrologia.  A partir
         deste painel, o usuário pode exportar os insights para PDF ou uma imagem
         para redes sociais e, quando desejar, avançar para a geração do plano
         alimentar mediante pagamento.
@@ -242,51 +284,61 @@ def main():
         # Computar insights e gráficos
         insights = dashboard_utils.compute_insights(st.session_state.data)
         charts = dashboard_utils.generate_dashboard_charts(insights)
+        # Gerar insight comportamental via IA
+        ai_insight = openai_utils.generate_insights(st.session_state.data)
         # Exibir métricas
         st.subheader("Resumo dos indicadores")
-        # Define card templates with custom HTML to resemble dashboard cards
+
         def make_card(title: str, value: str, description: str = "") -> str:
             return f"""
-                <div style="background-color: #F7F7F7; padding: 16px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
-                    <h4 style="margin: 0; color: #333;">{title}</h4>
-                    <p style="margin: 4px 0 0; font-size: 24px; font-weight: bold; color: #007BFF;">{value}</p>
-                    <p style="margin: 2px 0 0; font-size: 12px; color: #555;">{description}</p>
+                <div style=\"background-color: #F7F7F7; padding: 16px; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.1);\">
+                    <h4 style=\"margin: 0; color: #333;\">{title}</h4>
+                    <p style=\"margin: 4px 0 0; font-size: 24px; font-weight: bold; color: #007BFF;\">{value}</p>
+                    <p style=\"margin: 2px 0 0; font-size: 12px; color: #555;\">{description}</p>
                 </div>
             """
+
         # Build card contents
-        cards = []
+        cards: list[str] = []
         if insights.get("bmi"):
             cards.append(make_card(
                 "IMC",
                 f"{insights['bmi']:.1f}",
-                insights.get("bmi_category", "")
+                insights.get("bmi_category", ""),
             ))
         cards.append(make_card(
             "Hidratação",
             f"{insights['recommended_water']:.1f} L",
-            insights.get("water_status", "")
+            insights.get("water_status", ""),
         ))
         cards.append(make_card(
             "Escala de Bristol",
             "",
-            insights.get("bristol", "")
+            insights.get("bristol", ""),
         ))
         cards.append(make_card(
             "Cor da urina",
             "",
-            insights.get("urine", "")
+            insights.get("urine", ""),
         ))
         if insights.get("mental_notes"):
             cards.append(make_card(
                 "Nota psicológica",
                 "",
-                insights.get("mental_notes")
+                insights.get("mental_notes", ""),
             ))
         if insights.get("sign_hint"):
             cards.append(make_card(
                 "Dica do signo",
                 "",
-                insights.get("sign_hint")
+                insights.get("sign_hint", ""),
+            ))
+        # Add AI generated insight as its own card
+        if ai_insight:
+            cards.append(make_card(
+                "Insight personalizado",
+                "",
+                ai_insight,
             ))
         # Display cards in rows of two
         for i in range(0, len(cards), 2):
@@ -333,6 +385,8 @@ def main():
         # Botão para avançar
         if st.button("Gerar plano nutricional e prosseguir para pagamento"):
             next_step()
+
+    # Etapa 6: pagamento e geração do plano
     elif st.session_state.step == 6:
         st.header("6. Pagamento e geração do plano")
         st.write(
@@ -360,7 +414,9 @@ def main():
                 pdf_path = f"/tmp/{st.session_state.user_id}.pdf"
                 try:
                     pdf_generator.create_pdf_report(
-                        st.session_state.data, st.session_state.plan, pdf_path
+                        st.session_state.data,
+                        st.session_state.plan,
+                        pdf_path,
                     )
                     with open(pdf_path, 'rb') as f:
                         pdf_bytes = f.read()
@@ -375,6 +431,8 @@ def main():
                         "Em anexo está o seu plano alimentar personalizado gerado pelo NutriSigno. "
                         "Siga as orientações com responsabilidade e, se possível, consulte um profissional "
                         "da saúde antes de iniciar qualquer mudança significativa.\n\n"
+                        "Você poderá acessar novamente o painel de insights por meio do link abaixo:\n"
+                        f"{st.request.url.split('?')[0]}?id={st.session_state.user_id}\n\n"
                         "Atenciosamente,\nEquipe NutriSigno"
                     ).format(nome=st.session_state.data.get('nome'))
                     attachments = [(f"nutrisigno_plano_{st.session_state.user_id}.pdf", pdf_bytes)]
@@ -387,19 +445,19 @@ def main():
                 except Exception as e:
                     st.error(f"Erro ao enviar e‑mail: {e}")
                     return
-                st.success("Plano gerado e enviado com sucesso! Confira seu e‑mail.")
-        # Caso já exista plano, exibe resumo
-        if st.session_state.plan:
-            st.subheader("Resumo do Plano")
-            plan_json = json.dumps(st.session_state.plan, ensure_ascii=False, indent=2)
-            st.json(plan_json)
-            with open(pdf_path, 'rb') as f:
+                # Após o envio do e-mail, disponibiliza o PDF para download imediato
+                st.success("Plano gerado e enviado por e‑mail!")
                 st.download_button(
-                    label="Baixar relatório em PDF",
-                    data=f.read(),
+                    label="Baixar plano em PDF",
+                    data=pdf_bytes,
                     file_name=f"nutrisigno_plano_{st.session_state.user_id}.pdf",
                     mime="application/pdf",
                 )
+                st.markdown(
+                    f"Você pode revisitar seus insights quando quiser através deste link: "
+                    f"[Painel de Insights](/?id={st.session_state.user_id})"
+                )
+
 
 if __name__ == "__main__":
     main()
