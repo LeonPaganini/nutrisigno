@@ -1,14 +1,45 @@
-# modules/email_utils.py
+"""Utilities for sending e‑mail notifications.
+
+This module wraps access to the SMTP protocol so that the main
+application can send confirmation messages and attach generated PDF
+files.  In simulation mode the e‑mail content is not actually sent
+anywhere; instead, a lightweight record is returned so that tests
+remain deterministic and free of side effects.
+"""
+
 from __future__ import annotations
-import os, base64
-from typing import List, Tuple
 
-SIMULATE = os.getenv("SIMULATE", "0") == "1" or not os.getenv("SMTP_HOST")
+import os
+from typing import List, Tuple, Dict
 
-def send_email(recipient: str, subject: str, body: str, attachments: List[Tuple[str, bytes]] | None = None) -> dict:
-    """
-    Envia e-mail via SMTP; no modo simulado, apenas “loga” a intenção e devolve ok.
-    attachments: lista de tuplas (filename, bytes)
+# E‑mail is simulated when SIMULATE=1 or when no SMTP host is provided.
+SIMULATE: bool = os.getenv("SIMULATE", "0") == "1" or not os.getenv("SMTP_HOST")
+
+def send_email(recipient: str, subject: str, body: str, attachments: List[Tuple[str, bytes]] | None = None) -> Dict[str, any]:
+    """Send an e‑mail via SMTP.
+
+    When simulation mode is active this function simply returns a
+    dictionary describing the e‑mail that would have been sent.  When
+    not simulating, it connects to the SMTP server configured in the
+    environment variables and transmits the message.
+
+    Parameters
+    ----------
+    recipient:
+        The e‑mail address of the recipient.
+    subject:
+        The subject line for the e‑mail.
+    body:
+        The plain text body of the e‑mail.
+    attachments:
+        A list of tuples containing a filename and a bytes object.  Each
+        attachment is added to the e‑mail as a PDF.
+
+    Returns
+    -------
+    dict
+        Information about the send operation.  In simulation mode
+        describes the e‑mail; otherwise indicates success.
     """
     if SIMULATE:
         size = sum(len(b) for _, b in (attachments or []))
