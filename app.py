@@ -91,7 +91,7 @@ def main() -> None:
     # contiver ?id=<uuid>, tentamos carregar os dados gravados no Firebase (ou
     # arquivo local no modo simulado) e pulamos diretamente para o painel de
     # insights.  Uma flag ``loaded_external`` impede múltiplos carregamentos.
-    params = st.experimental_get_query_params()
+    params = st.query_params()
     session_id = params.get("id", [None])[0] if params else None
     if session_id and not st.session_state.get("loaded_external"):
         saved_data = firebase_utils.load_user_data(session_id)
