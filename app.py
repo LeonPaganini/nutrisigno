@@ -3,9 +3,10 @@
 Esta aplicação Streamlit coleta dados do usuário em várias etapas,
 interage com a API da OpenAI para criar um plano alimentar
 personalizado, salva os dados no Firebase e envia um relatório em PDF
-por e‑mail após a confirmação do pagamento.  Nesta versão a
+por e-mail após a confirmação do pagamento. Nesta versão a
 apresentação de dados foi enriquecida com um painel de insights
-personalizados e um mecanismo para reabrir sessões antigas a partir de
+personalizados, uma etapa visual de seleção do signo (grid com 12
+imagens) e um mecanismo para reabrir sessões antigas a partir de
 um identificador na URL.
 """
 
@@ -22,7 +23,7 @@ import streamlit as st
 from modules import firebase_utils, openai_utils, pdf_generator, email_utils, dashboard_utils
 
 # When SIMULATE=1 (or unspecified keys are missing) the external
-# services (OpenAI, Firebase and SMTP) will be simulated.  This is
+# services (OpenAI, Firebase and SMTP) will be simulated. This is
 # configured entirely in the environment and reused by the modules.
 SIMULATE: bool = os.getenv("SIMULATE", "0") == "1"
 
@@ -81,16 +82,107 @@ def next_step() -> None:
     st.session_state.step += 1
 
 
+# =========================
+# UI — Seleção do Signo (GRID)
+# =========================
+
+# Mock de imagens/cores/ícones para os 12 signos (apenas frontend)
+SIGNO_META: Dict[str, Dict[str, str]] = {
+    "Áries":       {"emoji": "♈", "color": "#E4572E", "img": "https://images.unsplash.com/photo-1520975916090-3105956dac38?q=80&w=1200&auto=format&fit=crop"},
+    "Touro":       {"emoji": "♉", "color": "#8FB339", "img": "https://images.unsplash.com/photo-1500534314209-a25ddb2bd429?q=80&w=1200&auto=format&fit=crop"},
+    "Gêmeos":      {"emoji": "♊", "color": "#2E86AB", "img": "https://images.unsplash.com/photo-1472214103451-9374bd1c798e?q=80&w=1200&auto=format&fit=crop"},
+    "Câncer":      {"emoji": "♋", "color": "#4ECDC4", "img": "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?q=80&w=1200&auto=format&fit=crop"},
+    "Leão":        {"emoji": "♌", "color": "#F4B860", "img": "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?q=80&w=1200&auto=format&fit=crop"},
+    "Virgem":      {"emoji": "♍", "color": "#90A955", "img": "https://images.unsplash.com/photo-1501004318641-b39e6451bec6?q=80&w=1200&auto=format&fit=crop"},
+    "Libra":       {"emoji": "♎", "color": "#B497BD", "img": "https://images.unsplash.com/photo-1519681393784-d120267933ba?q=80&w=1200&auto=format&fit=crop"},
+    "Escorpião":   {"emoji": "♏", "color": "#8E3B46", "img": "https://images.unsplash.com/photo-1520975916090-3105956dac38?q=80&w=1200&auto=format&fit=crop"},
+    "Sagitário":   {"emoji": "♐", "color": "#F29E4C", "img": "https://images.unsplash.com/photo-1469474968028-56623f02e42e?q=80&w=1200&auto=format&fit=crop"},
+    "Capricórnio": {"emoji": "♑", "color": "#5B5B5B", "img": "https://images.unsplash.com/photo-1501785888041-af3ef285b470?q=80&w=1200&auto=format&fit=crop"},
+    "Aquário":     {"emoji": "♒", "color": "#2E6F59", "img": "https://images.unsplash.com/photo-1519681391659-ecd76f2f8f82?q=80&w=1200&auto=format&fit=crop"},
+    "Peixes":      {"emoji": "♓", "color": "#6C91BF", "img": "https://images.unsplash.com/photo-1507525428034-b723cf961d3e?q=80&w=1200&auto=format&fit=crop"},
+}
+
+PRIMARY = "#2E6F59"
+SOFT_BG = "#F1F5F4"
+MUTED = "#5B5B5B"
+
+
+def _inject_sign_grid_css() -> None:
+    st.markdown(
+        f"""
+        <style>
+        .sign-card {{
+            border-radius: 14px;
+            overflow: hidden;
+            background: #fff;
+            border: 1px solid #e9eeec;
+            transition: transform .12s ease, box-shadow .12s ease;
+            cursor: pointer;
+        }}
+        .sign-card:hover {{ transform: translateY(-2px); box-shadow: 0 6px 18px rgba(0,0,0,0.08); }}
+        .sign-img {{ width: 100%; height: 140px; object-fit: cover; display:block; }}
+        .sign-body {{ padding: 10px 12px 12px 12px; }}
+        .sign-title {{ margin:0; font-weight: 800; color: {PRIMARY}; }}
+        .sign-sub {{ margin:2px 0 0 0; color: {MUTED}; font-size:.92rem; }}
+        .grid-title {{ margin-bottom: 8px; font-weight:800; color:{PRIMARY}; font-size:1.2rem; }}
+        .soft-box {{ background: linear-gradient(135deg, {SOFT_BG}, #fff); border:1px solid #e8eceb; border-radius:16px; padding:18px; }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_sign_grid(title: str = "Selecione seu signo", cols: int = 4) -> str | None:
+    """Renderiza um grid com 12 imagens de signos. Retorna o signo escolhido ou None."""
+    _inject_sign_grid_css()
+    st.markdown(f"<div class='grid-title'>{title}</div>", unsafe_allow_html=True)
+
+    signos = list(SIGNO_META.keys())
+    selected: str | None = None
+    for i in range(0, len(signos), cols):
+        row = st.columns(cols, gap="small")
+        for j, col in enumerate(row):
+            idx = i + j
+            if idx >= len(signos):
+                continue
+            name = signos[idx]
+            meta = SIGNO_META[name]
+            with col:
+                st.markdown("<div class='sign-card'>", unsafe_allow_html=True)
+                st.markdown(f"<img class='sign-img' src='{meta['img']}' alt='{name}'>", unsafe_allow_html=True)
+                st.markdown("<div class='sign-body'>", unsafe_allow_html=True)
+                st.markdown(f"<p class='sign-title'>{meta['emoji']} {name}</p>", unsafe_allow_html=True)
+                st.markdown(f"<p class='sign-sub'>Clique para selecionar</p>", unsafe_allow_html=True)
+                if st.button(f"Escolher {meta['emoji']}", key=f"sel_{name}"):
+                    st.session_state["signo"] = name
+                    st.session_state.data["signo"] = name
+                    selected = name
+                st.markdown("</div></div>", unsafe_allow_html=True)
+    return selected
+
+
+def render_selected_info() -> None:
+    """Mostra um resumo do signo selecionado."""
+    signo = st.session_state.get("signo") or st.session_state.data.get("signo")
+    if not signo:
+        return
+    meta = SIGNO_META.get(signo, {"emoji": "•", "color": PRIMARY})
+    st.markdown(
+        f"<div class='soft-box'>Você selecionou: <b style='color:{meta['color']}'>{meta['emoji']} {signo}</b></div>",
+        unsafe_allow_html=True,
+    )
+
+
+# =========================
+# APP
+# =========================
 def main() -> None:
     """Função principal invocada pelo Streamlit para renderizar a app."""
     # Configuração da página
     st.set_page_config(page_title="NutriSigno", layout="wide")
     initialize_session()
 
-    # Verifica parâmetros de consulta para reabrir sessões antigas.  Se a URL
-    # contiver ?id=<uuid>, tentamos carregar os dados gravados no Firebase (ou
-    # arquivo local no modo simulado) e pulamos diretamente para o painel de
-    # insights.  Uma flag ``loaded_external`` impede múltiplos carregamentos.
+    # Reabrir sessões antigas via parâmetro ?id=<uuid>
     params = st.query_params
     session_id = params.get("id", [None])[0] if params else None
     if session_id and not st.session_state.get("loaded_external"):
@@ -98,18 +190,18 @@ def main() -> None:
         if saved_data:
             st.session_state.user_id = session_id
             st.session_state.data = saved_data
-            st.session_state.step = 5
+            st.session_state.step = 6  # Painel de insights agora é a etapa 6
             st.session_state.loaded_external = True
 
     # Título e introdução
     st.title("NutriSigno")
     st.write(
-        "Bem‑vindo ao NutriSigno! Preencha as etapas abaixo para receber um plano "
+        "Bem-vindo ao NutriSigno! Preencha as etapas abaixo para receber um plano "
         "alimentar personalizado, combinando ciência e astrologia."
     )
 
-    # Barra de progresso: há 6 etapas, incluindo o painel de insights e o pagamento
-    total_steps = 6
+    # Barra de progresso: agora com 7 etapas
+    total_steps = 7
     progress = (st.session_state.step - 1) / total_steps
     st.progress(progress)
 
@@ -118,7 +210,7 @@ def main() -> None:
         st.header("1. Dados pessoais")
         with st.form("dados_pessoais"):
             nome = st.text_input("Nome completo")
-            email = st.text_input("E‑mail")
+            email = st.text_input("E-mail")
             telefone = st.text_input("Telefone (WhatsApp)")
             peso = st.number_input("Peso (kg)", min_value=0.0, max_value=500.0, step=0.1)
             altura = st.number_input("Altura (cm)", min_value=0.0, max_value=300.0, step=0.1)
@@ -131,7 +223,8 @@ def main() -> None:
                 if any(field in (None, "") for field in required_fields):
                     st.error("Por favor preencha todos os campos obrigatórios.")
                 else:
-                    signo = get_zodiac_sign(data_nasc)
+                    # Podemos pré-preencher um palpite de signo (será confirmado na Etapa 2)
+                    signo_guess = get_zodiac_sign(data_nasc)
                     st.session_state.data.update({
                         "nome": nome,
                         "email": email,
@@ -141,13 +234,31 @@ def main() -> None:
                         "data_nascimento": data_nasc.isoformat(),
                         "hora_nascimento": hora_nasc.isoformat(),
                         "local_nascimento": local_nasc,
-                        "signo": signo,
+                        "signo": signo_guess,  # será confirmado/ajustado no grid
                     })
+                    st.session_state["signo"] = signo_guess
                     next_step()
 
-    # Etapa 2: avaliação nutricional
+    # Etapa 2: Seleção do Signo (GRID)
     elif st.session_state.step == 2:
-        st.header("2. Avaliação nutricional")
+        st.header("2. Selecione seu signo")
+        st.caption("Confirme seu signo escolhendo uma das imagens abaixo.")
+        _ = render_sign_grid(cols=4)
+        render_selected_info()
+        cols = st.columns([1, 1])
+        with cols[0]:
+            if st.button("Voltar ◀"):
+                st.session_state.step = 1
+        with cols[1]:
+            if st.session_state.get("signo"):
+                if st.button("Continuar ▶"):
+                    next_step()
+            else:
+                st.info("Selecione um signo para continuar.")
+
+    # Etapa 3: avaliação nutricional
+    elif st.session_state.step == 3:
+        st.header("3. Avaliação nutricional")
         with st.form("avaliacao_nutricional"):
             historico = st.text_area(
                 "Histórico de saúde e medicamentos",
@@ -162,7 +273,6 @@ def main() -> None:
             st.subheader("Tipo de Fezes (Escala de Bristol)")
             col_bristol1, col_bristol2 = st.columns([1, 2])
             with col_bristol1:
-                # Carrega a imagem somente se existir; caso contrário, exibe placeholder
                 try:
                     st.image(Image.open(PATH_BRISTOL), caption='Escala de Bristol', use_column_width=True)
                 except Exception:
@@ -218,9 +328,9 @@ def main() -> None:
                     })
                     next_step()
 
-    # Etapa 3: avaliação psicológica e de perfil
-    elif st.session_state.step == 3:
-        st.header("3. Avaliação psicológica e perfil")
+    # Etapa 4: avaliação psicológica e de perfil
+    elif st.session_state.step == 4:
+        st.header("4. Avaliação psicológica e perfil")
         with st.form("avaliacao_psicologica"):
             motivacao = st.slider(
                 "Nível de motivação para mudanças alimentares", 1, 5, 3
@@ -256,9 +366,9 @@ def main() -> None:
                     })
                     next_step()
 
-    # Etapa 4: avaliação geral
-    elif st.session_state.step == 4:
-        st.header("4. Avaliação geral")
+    # Etapa 5: avaliação geral
+    elif st.session_state.step == 5:
+        st.header("5. Avaliação geral")
         with st.form("avaliacao_geral"):
             observacoes = st.text_area(
                 "Observações adicionais",
@@ -269,18 +379,10 @@ def main() -> None:
                 st.session_state.data.update({"observacoes": observacoes})
                 next_step()
 
-    # Etapa 5: painel de insights
-    elif st.session_state.step == 5:
-        """Painel de insights.
-
-        Nesta etapa, o usuário visualiza métricas derivadas dos dados fornecidos
-        nas etapas anteriores.  São exibidos gráficos e textos interpretativos
-        combinando ciência da nutrição com uma pitada de astrologia.  A partir
-        deste painel, o usuário pode exportar os insights para PDF ou uma imagem
-        para redes sociais e, quando desejar, avançar para a geração do plano
-        alimentar mediante pagamento.
-        """
-        st.header("5. Painel de insights")
+    # Etapa 6: painel de insights
+    elif st.session_state.step == 6:
+        """Painel de insights."""
+        st.header("6. Painel de insights")
         # Computar insights e gráficos
         insights = dashboard_utils.compute_insights(st.session_state.data)
         charts = dashboard_utils.generate_dashboard_charts(insights)
@@ -298,7 +400,6 @@ def main() -> None:
                 </div>
             """
 
-        # Build card contents
         cards: list[str] = []
         if insights.get("bmi"):
             cards.append(make_card(
@@ -333,7 +434,6 @@ def main() -> None:
                 "",
                 insights.get("sign_hint", ""),
             ))
-        # Add AI generated insight as its own card
         if ai_insight:
             cards.append(make_card(
                 "Insight personalizado",
@@ -382,13 +482,12 @@ def main() -> None:
             except Exception as e:
                 st.error(f"Erro ao gerar imagem: {e}")
         st.markdown("---")
-        # Botão para avançar
         if st.button("Gerar plano nutricional e prosseguir para pagamento"):
             next_step()
 
-    # Etapa 6: pagamento e geração do plano
-    elif st.session_state.step == 6:
-        st.header("6. Pagamento e geração do plano")
+    # Etapa 7: pagamento e geração do plano
+    elif st.session_state.step == 7:
+        st.header("7. Pagamento e geração do plano")
         st.write(
             "Para finalizar, realize o pagamento abaixo. Este exemplo utiliza um "
             "botão simbólico; substitua por sua integração de pagamento real em produção."
@@ -423,7 +522,7 @@ def main() -> None:
                 except Exception as e:
                     st.error(f"Erro ao gerar o PDF: {e}")
                     return
-                # Envia e‑mail
+                # Envia e-mail
                 try:
                     subject = "Seu Plano Alimentar NutriSigno"
                     body = (
@@ -443,10 +542,10 @@ def main() -> None:
                         attachments=attachments,
                     )
                 except Exception as e:
-                    st.error(f"Erro ao enviar e‑mail: {e}")
+                    st.error(f"Erro ao enviar e-mail: {e}")
                     return
                 # Após o envio do e-mail, disponibiliza o PDF para download imediato
-                st.success("Plano gerado e enviado por e‑mail!")
+                st.success("Plano gerado e enviado por e-mail!")
                 st.download_button(
                     label="Baixar plano em PDF",
                     data=pdf_bytes,
