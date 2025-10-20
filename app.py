@@ -13,21 +13,21 @@ um identificador na URL.
 from __future__ import annotations
 
 import os
+import io
 import uuid
 from datetime import date, time
 from typing import Dict, Any
 
 from PIL import Image
 import streamlit as st
+import matplotlib.pyplot as plt
 
-from modules import firebase_utils, openai_utils, pdf_generator, email_utils, dashboard_utils
+from modules import firebase_utils, openai_utils, pdf_generator, email_utils
 
-# When SIMULATE=1 (or unspecified keys are missing) the external
-# services (OpenAI, Firebase and SMTP) will be simulated. This is
-# configured entirely in the environment and reused by the modules.
+# Quando SIMULATE=1 (ou chaves faltarem), serviços externos são simulados
 SIMULATE: bool = os.getenv("SIMULATE", "0") == "1"
 
-# Paths to the illustrative images for the Bristol stool scale and urine colour
+# Caminhos de imagens ilustrativas (se não existirem, o app segue em fallback)
 PATH_BRISTOL = "assets/escala_bistrol.jpeg"
 PATH_URINA = "assets/escala_urina.jpeg"
 
@@ -86,7 +86,7 @@ def next_step() -> None:
 # UI — Seleção do Signo (GRID)
 # =========================
 
-# Mock de imagens/cores/ícones para os 12 signos (apenas frontend)
+# Mock de imagens/cores/ícones para os 12 signos (frontend)
 SIGNO_META: Dict[str, Dict[str, str]] = {
     "Áries":       {"emoji": "♈", "color": "#E4572E", "img": "https://images.unsplash.com/photo-1520975916090-3105956dac38?q=80&w=1200&auto=format&fit=crop"},
     "Touro":       {"emoji": "♉", "color": "#8FB339", "img": "https://images.unsplash.com/photo-1500534314209-a25ddb2bd429?q=80&w=1200&auto=format&fit=crop"},
@@ -178,7 +178,6 @@ def render_selected_info() -> None:
 # =========================
 def main() -> None:
     """Função principal invocada pelo Streamlit para renderizar a app."""
-    # Configuração da página
     st.set_page_config(page_title="NutriSigno", layout="wide")
     initialize_session()
 
@@ -186,11 +185,14 @@ def main() -> None:
     params = st.query_params
     session_id = params.get("id", [None])[0] if params else None
     if session_id and not st.session_state.get("loaded_external"):
-        saved_data = firebase_utils.load_user_data(session_id)
+        try:
+            saved_data = firebase_utils.load_user_data(session_id)
+        except Exception:
+            saved_data = None
         if saved_data:
             st.session_state.user_id = session_id
             st.session_state.data = saved_data
-            st.session_state.step = 6  # Painel de insights agora é a etapa 6
+            st.session_state.step = 6  # Painel de insights
             st.session_state.loaded_external = True
 
     # Título e introdução
@@ -223,7 +225,6 @@ def main() -> None:
                 if any(field in (None, "") for field in required_fields):
                     st.error("Por favor preencha todos os campos obrigatórios.")
                 else:
-                    # Podemos pré-preencher um palpite de signo (será confirmado na Etapa 2)
                     signo_guess = get_zodiac_sign(data_nasc)
                     st.session_state.data.update({
                         "nome": nome,
@@ -234,7 +235,7 @@ def main() -> None:
                         "data_nascimento": data_nasc.isoformat(),
                         "hora_nascimento": hora_nasc.isoformat(),
                         "local_nascimento": local_nasc,
-                        "signo": signo_guess,  # será confirmado/ajustado no grid
+                        "signo": signo_guess,  # será confirmado
                     })
                     st.session_state["signo"] = signo_guess
                     next_step()
@@ -247,11 +248,11 @@ def main() -> None:
         render_selected_info()
         cols = st.columns([1, 1])
         with cols[0]:
-            if st.button("Voltar ◀"):
+            if st.button("Voltar ◀️"):
                 st.session_state.step = 1
         with cols[1]:
             if st.session_state.get("signo"):
-                if st.button("Continuar ▶"):
+                if st.button("Continuar ▶️"):
                     next_step()
             else:
                 st.info("Selecione um signo para continuar.")
@@ -380,15 +381,7 @@ def main() -> None:
                 next_step()
 
     # Etapa 6: painel de insights
-    import io
-    from modules import openai_utils
-    try:
-        from modules import dashboard_utils  # se você já tiver este módulo
-    except Exception:
-        dashboard_utils = None
-
-    # --- dentro do passo "Painel de insights" ---
-    elif st.session_state.step ==6:
+    elif st.session_state.step == 6:
         st.header("6. Painel de insights")
 
         # 1) Obter insights (com fallback hard)
@@ -398,27 +391,28 @@ def main() -> None:
             ai_summary = ai_pack.get("ai_summary", "Resumo indisponível (modo simulado).")
         except Exception as e:
             st.warning(f"Modo fallback automático: {e}")
-            # fallback mínimo (se openai_utils tiver sido quebrado por algum motivo)
             peso = float(st.session_state.data.get("peso") or 70)
             altura = float(st.session_state.data.get("altura") or 170)
-            altura_m = altura/100
-            bmi = round(peso/(altura_m**2),1)
+            altura_m = altura / 100
+            bmi = round(peso / (altura_m ** 2), 1)
             insights = {
                 "bmi": bmi,
                 "bmi_category": "Eutrofia" if 18.5 <= bmi < 25 else ("Baixo peso" if bmi < 18.5 else ("Sobrepeso" if bmi < 30 else "Obesidade")),
-                "recommended_water": round(max(1.5, peso*0.035),1),
+                "recommended_water": round(max(1.5, peso * 0.035), 1),
                 "water_status": "OK",
                 "bristol": "Padrão dentro do esperado",
                 "urine": "Hidratado",
                 "motivacao": int(st.session_state.data.get("motivacao") or 3),
                 "estresse": int(st.session_state.data.get("estresse") or 3),
                 "sign_hint": "Use seu signo como inspiração, não como prescrição.",
-                "consumption": {"water_liters": float(st.session_state.data.get("consumo_agua") or 1.5),
-                                "recommended_liters": round(max(1.5, peso*0.035),1)}
+                "consumption": {
+                    "water_liters": float(st.session_state.data.get("consumo_agua") or 1.5),
+                    "recommended_liters": round(max(1.5, peso * 0.035), 1),
+                },
             }
             ai_summary = "Resumo simulado (fallback hard)."
 
-        # 2) Cards (HTML/CSS leve para visual limpo)
+        # 2) Cards (HTML/CSS leve)
         card_css = """
         <style>
         .grid {display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:8px;}
@@ -432,62 +426,63 @@ def main() -> None:
         st.markdown(card_css, unsafe_allow_html=True)
 
         st.markdown('<div class="grid">', unsafe_allow_html=True)
+
         def badge(text, ok=True):
             cls = "badge-ok" if ok else "badge-warn"
             return f'<span class="{cls}">{text}</span>'
 
         st.markdown(f'''
         <div class="card">
-        <div>IMC</div>
-        <div class="kpi">{insights.get("bmi","--")}</div>
-        <div class="sub">{insights.get("bmi_category","")}</div>
+          <div>IMC</div>
+          <div class="kpi">{insights.get("bmi","--")}</div>
+          <div class="sub">{insights.get("bmi_category","")}</div>
         </div>
         ''', unsafe_allow_html=True)
 
         st.markdown(f'''
         <div class="card">
-        <div>Hidratação</div>
-        <div class="kpi">{insights["consumption"]["water_liters"]} / {insights["consumption"]["recommended_liters"]} L</div>
-        <div class="sub">{badge(insights.get("water_status","OK")=="OK" and "Meta atingida" or "Abaixo do ideal", ok=insights.get("water_status","OK")=="OK")}</div>
+          <div>Hidratação</div>
+          <div class="kpi">{insights["consumption"]["water_liters"]} / {insights["consumption"]["recommended_liters"]} L</div>
+          <div class="sub">{badge(insights.get("water_status","OK")=="OK" and "Meta atingida" or "Abaixo do ideal",
+                                   ok=insights.get("water_status","OK")=="OK")}</div>
         </div>
         ''', unsafe_allow_html=True)
 
         st.markdown(f'''
         <div class="card">
-        <div>Digestão</div>
-        <div class="kpi">Bristol</div>
-        <div class="sub">{insights.get("bristol","")}</div>
+          <div>Digestão</div>
+          <div class="kpi">Bristol</div>
+          <div class="sub">{insights.get("bristol","")}</div>
         </div>
         ''', unsafe_allow_html=True)
 
         st.markdown(f'''
         <div class="card">
-        <div>Urina</div>
-        <div class="kpi">Cor</div>
-        <div class="sub">{insights.get("urine","")}</div>
+          <div>Urina</div>
+          <div class="kpi">Cor</div>
+          <div class="sub">{insights.get("urine","")}</div>
         </div>
         ''', unsafe_allow_html=True)
 
         st.markdown(f'''
         <div class="card">
-        <div>Comportamento</div>
-        <div class="kpi">Motivação {insights.get("motivacao",0)}/5</div>
-        <div class="sub">Estresse {insights.get("estresse",0)}/5</div>
+          <div>Comportamento</div>
+          <div class="kpi">Motivação {insights.get("motivacao",0)}/5</div>
+          <div class="sub">Estresse {insights.get("estresse",0)}/5</div>
         </div>
         ''', unsafe_allow_html=True)
 
         st.markdown(f'''
         <div class="card">
-        <div>Insight do signo</div>
-        <div class="kpi">🜚</div>
-        <div class="sub">{insights.get("sign_hint","")}</div>
+          <div>Insight do signo</div>
+          <div class="kpi">🜚</div>
+          <div class="sub">{insights.get("sign_hint","")}</div>
         </div>
         ''', unsafe_allow_html=True)
+
         st.markdown('</div>', unsafe_allow_html=True)
 
-        # 3) Gráficos (matplotlib) – seguros no free tier
-        import matplotlib.pyplot as plt
-
+        # 3) Gráficos
         col1, col2 = st.columns(2)
         with col1:
             fig = plt.figure()
@@ -495,7 +490,6 @@ def main() -> None:
             vals = [insights["consumption"]["water_liters"], insights["consumption"]["recommended_liters"]]
             plt.bar(["Consumido", "Recomendado"], vals)
             st.pyplot(fig, clear_figure=True)
-
         with col2:
             fig2 = plt.figure()
             plt.title("IMC")
@@ -503,15 +497,11 @@ def main() -> None:
             plt.axhline(18.5, linestyle="--"); plt.axhline(25, linestyle="--")
             st.pyplot(fig2, clear_figure=True)
 
-        # 4) Resumo textual (da IA ou simulado)
+        # 4) Resumo textual
         with st.expander("Resumo dos insights"):
             st.write(ai_summary)
 
-        # 5) Exportações (PDF/Imagem) – usando seus utilitários se existirem, com fallback
-        from modules import pdf_generator
-        btn1, btn2, btn3 = st.columns(3)
-
-        # PDF (insights) – fallback: gerar PDF simples com reportlab direto
+        # 5) Exportações (PDF/Imagem)
         def build_insights_pdf_bytes(ins):
             try:
                 from reportlab.lib.pagesizes import A4
@@ -522,52 +512,43 @@ def main() -> None:
                 y = 28*cm
                 c.setFont("Helvetica-Bold", 14); c.drawString(2*cm, y, "NutriSigno — Painel de Insights"); y -= 1*cm
                 c.setFont("Helvetica", 10)
-                for k,v in [
-                ("IMC", f"{ins['bmi']} ({ins['bmi_category']})"),
-                ("Hidratação", f"{ins['consumption']['water_liters']} / {ins['consumption']['recommended_liters']} L"),
-                ("Bristol", ins["bristol"]),
-                ("Urina", ins["urine"]),
-                ("Motivação/Estresse", f"{ins['motivacao']}/5 · {ins['estresse']}/5"),
-                ("Insight do signo", ins["sign_hint"]),
+                for k, v in [
+                    ("IMC", f"{ins['bmi']} ({ins['bmi_category']})"),
+                    ("Hidratação", f"{ins['consumption']['water_liters']} / {ins['consumption']['recommended_liters']} L"),
+                    ("Bristol", ins["bristol"]),
+                    ("Urina", ins["urine"]),
+                    ("Motivação/Estresse", f"{ins['motivacao']}/5 · {ins['estresse']}/5"),
+                    ("Insight do signo", ins["sign_hint"]),
                 ]:
                     c.drawString(2*cm, y, f"{k}: {v}"); y -= 0.8*cm
                     if y < 2*cm: c.showPage(); y = 28*cm
-                c.save()
-                buf.seek(0)
+                c.save(); buf.seek(0)
                 return buf.getvalue()
             except Exception:
                 return b"%PDF-1.4\n% fallback vazio"
 
-        with btn1:
-            pdf_bytes = build_insights_pdf_bytes(insights)
-            st.download_button("Exportar PDF", data=pdf_bytes, file_name="insights.pdf", mime="application/pdf")
-
-        # Imagem compartilhável (post)
         def build_share_png_bytes(ins):
-            import matplotlib.pyplot as plt
-            import numpy as np
-            fig = plt.figure(figsize=(6,6), dpi=200)
+            fig = plt.figure(figsize=(6, 6), dpi=200)
             plt.title("NutriSigno — Resumo", pad=12)
             text = (
                 f"IMC: {ins['bmi']} ({ins['bmi_category']})\n"
                 f"Hidratação: {ins['consumption']['water_liters']} / {ins['consumption']['recommended_liters']} L\n"
                 f"Bristol: {ins['bristol']}\nUrina: {ins['urine']}\n"
                 f"Motivação/Estresse: {ins['motivacao']}/5 · {ins['estresse']}/5\n"
-                f"Signo: {ins.get('sign_hint','')}\n"
-                f"#NutriSigno"
+                f"Signo: {ins.get('sign_hint','')}\n#NutriSigno"
             )
-            plt.axis("off")
-            plt.text(0.02, 0.98, text, va="top", ha="left", wrap=True)
-            buf = io.BytesIO()
-            fig.savefig(buf, format="png", bbox_inches="tight")
-            plt.close(fig)
+            plt.axis("off"); plt.text(0.02, 0.98, text, va="top", ha="left", wrap=True)
+            buf = io.BytesIO(); fig.savefig(buf, format="png", bbox_inches="tight"); plt.close(fig)
             return buf.getvalue()
 
-        with btn2:
-            img_bytes = build_share_png_bytes(insights)
-            st.download_button("Baixar imagem", data=img_bytes, file_name="insights.png", mime="image/png")
-
-        with btn3:
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            st.download_button("Exportar PDF", data=build_insights_pdf_bytes(insights),
+                               file_name="insights.pdf", mime="application/pdf")
+        with c2:
+            st.download_button("Baixar imagem", data=build_share_png_bytes(insights),
+                               file_name="insights.png", mime="image/png")
+        with c3:
             if st.button("Gerar plano nutricional e prosseguir para pagamento"):
                 st.session_state.step += 1
                 st.rerun()
@@ -583,10 +564,10 @@ def main() -> None:
             if st.button("Realizar pagamento (exemplo)"):
                 st.session_state.paid = True
                 st.success("Pagamento confirmado! Gerando seu plano...")
+
         if st.session_state.paid and st.session_state.plan is None:
             with st.spinner("Gerando plano personalizado, por favor aguarde..."):
                 try:
-                    # Salva dados no Firebase
                     firebase_utils.save_user_data(st.session_state.user_id, st.session_state.data)
                 except Exception as e:
                     st.error(f"Erro ao salvar dados no Firebase: {e}")
@@ -609,8 +590,10 @@ def main() -> None:
                 except Exception as e:
                     st.error(f"Erro ao gerar o PDF: {e}")
                     return
-                # Envia e-mail
+                # Envia e-mail (link estável)
                 try:
+                    base_url = os.getenv("PUBLIC_BASE_URL", "")
+                    panel_link = f"{base_url}/?id={st.session_state.user_id}" if base_url else f"/?id={st.session_state.user_id}"
                     subject = "Seu Plano Alimentar NutriSigno"
                     body = (
                         "Olá {nome},\n\n"
@@ -618,7 +601,7 @@ def main() -> None:
                         "Siga as orientações com responsabilidade e, se possível, consulte um profissional "
                         "da saúde antes de iniciar qualquer mudança significativa.\n\n"
                         "Você poderá acessar novamente o painel de insights por meio do link abaixo:\n"
-                        f"{st.request.url.split('?')[0]}?id={st.session_state.user_id}\n\n"
+                        f"{panel_link}\n\n"
                         "Atenciosamente,\nEquipe NutriSigno"
                     ).format(nome=st.session_state.data.get('nome'))
                     attachments = [(f"nutrisigno_plano_{st.session_state.user_id}.pdf", pdf_bytes)]
@@ -631,7 +614,7 @@ def main() -> None:
                 except Exception as e:
                     st.error(f"Erro ao enviar e-mail: {e}")
                     return
-                # Após o envio do e-mail, disponibiliza o PDF para download imediato
+
                 st.success("Plano gerado e enviado por e-mail!")
                 st.download_button(
                     label="Baixar plano em PDF",
@@ -647,4 +630,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
