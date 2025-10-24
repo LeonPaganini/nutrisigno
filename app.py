@@ -23,6 +23,8 @@ import streamlit as st
 import matplotlib.pyplot as plt
 
 from modules import firebase_utils, openai_utils, pdf_generator, email_utils
+from modules.app_bootstrap import ensure_bootstrap
+ensure_bootstrap()
 
 # Quando SIMULATE=1 (ou chaves faltarem), serviços externos são simulados
 SIMULATE: bool = os.getenv("SIMULATE", "0") == "1"
