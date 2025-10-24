@@ -1,13 +1,15 @@
-"""Aplicação principal do NutriSigno.
+# app.py
+"""
+Aplicação principal do NutriSigno.
 
 Esta aplicação Streamlit coleta dados do usuário em várias etapas,
 interage com a API da OpenAI para criar um plano alimentar
-personalizado, salva os dados no Firebase e envia um relatório em PDF
+personalizado, salva os dados no PostgreSQL e envia um relatório em PDF
 por e-mail após a confirmação do pagamento. Nesta versão a
 apresentação de dados foi enriquecida com um painel de insights
 personalizados, uma etapa visual de seleção do signo (grid com 12
 imagens) e um mecanismo para reabrir sessões antigas a partir de
-um identificador na URL.
+um identificador na URL (pac_id).
 """
 
 from __future__ import annotations
@@ -15,15 +17,19 @@ from __future__ import annotations
 import os
 import io
 import uuid
-from datetime import date, time
+from datetime import date, time, datetime
 from typing import Dict, Any
 
 from PIL import Image
 import streamlit as st
 import matplotlib.pyplot as plt
 
-from modules import firebase_utils, openai_utils, pdf_generator, email_utils
+# Módulos internos do projeto
+from modules import openai_utils, pdf_generator, email_utils
 from modules.app_bootstrap import ensure_bootstrap
+from modules import repo  # <- PostgreSQL (SQLAlchemy)
+
+# Garante que as tabelas existam (Render/produção)
 ensure_bootstrap()
 
 # Quando SIMULATE=1 (ou chaves faltarem), serviços externos são simulados
@@ -68,7 +74,7 @@ def get_zodiac_sign(birth_date: date) -> str:
 def initialize_session() -> None:
     """Inicializa variáveis na sessão do Streamlit."""
     if "user_id" not in st.session_state:
-        st.session_state.user_id = str(uuid.uuid4())
+        st.session_state.user_id = str(uuid.uuid4())  # ainda usamos, mas pac_id será o id "canônico"
     if "step" not in st.session_state:
         st.session_state.step = 1
     if "data" not in st.session_state:
@@ -77,6 +83,8 @@ def initialize_session() -> None:
         st.session_state.paid = False
     if "plan" not in st.session_state:
         st.session_state.plan = None
+    if "pac_id" not in st.session_state:
+        st.session_state.pac_id = None  # id persistido no PostgreSQL
 
 
 def next_step() -> None:
@@ -183,17 +191,18 @@ def main() -> None:
     st.set_page_config(page_title="NutriSigno", layout="wide")
     initialize_session()
 
-    # Reabrir sessões antigas via parâmetro ?id=<uuid>
+    # Reabrir sessões antigas via parâmetro ?id=<pac_id> (PostgreSQL)
     params = st.query_params
-    session_id = params.get("id", [None])[0] if params else None
-    if session_id and not st.session_state.get("loaded_external"):
+    pac_id_param = params.get("id", [None])[0] if params else None
+    if pac_id_param and not st.session_state.get("loaded_external"):
         try:
-            saved_data = firebase_utils.load_user_data(session_id)
+            loaded = repo.get_by_pac_id(pac_id_param)
         except Exception:
-            saved_data = None
-        if saved_data:
-            st.session_state.user_id = session_id
-            st.session_state.data = saved_data
+            loaded = None
+        if loaded:
+            st.session_state.pac_id = loaded["pac_id"]
+            st.session_state.data = loaded.get("respostas", {}) or {}
+            st.session_state.plan = loaded.get("plano_alimentar")
             st.session_state.step = 6  # Painel de insights
             st.session_state.loaded_external = True
 
@@ -204,7 +213,7 @@ def main() -> None:
         "alimentar personalizado, combinando ciência e astrologia."
     )
 
-    # Barra de progresso: agora com 7 etapas
+    # Barra de progresso: 7 etapas
     total_steps = 7
     progress = (st.session_state.step - 1) / total_steps
     st.progress(progress)
@@ -234,7 +243,7 @@ def main() -> None:
                         "telefone": telefone,
                         "peso": peso,
                         "altura": altura,
-                        "data_nascimento": data_nasc.isoformat(),
+                        "data_nascimento": data_nasc.isoformat(),  # repo aceita YYYY-MM-DD também
                         "hora_nascimento": hora_nasc.isoformat(),
                         "local_nascimento": local_nasc,
                         "signo": signo_guess,  # será confirmado
@@ -569,18 +578,42 @@ def main() -> None:
 
         if st.session_state.paid and st.session_state.plan is None:
             with st.spinner("Gerando plano personalizado, por favor aguarde..."):
-                try:
-                    firebase_utils.save_user_data(st.session_state.user_id, st.session_state.data)
-                except Exception as e:
-                    st.error(f"Erro ao salvar dados no Firebase: {e}")
+                # 1) Gera o plano via OpenAI
                 try:
                     plan_dict = openai_utils.generate_plan(st.session_state.data)
                     st.session_state.plan = plan_dict
                 except Exception as e:
                     st.error(f"Erro ao gerar plano com a OpenAI: {e}")
                     return
-                # Gera PDF
-                pdf_path = f"/tmp/{st.session_state.user_id}.pdf"
+
+                # 2) (Opcional) calcular macros e plano_compacto, se seu openai_utils não já retornar
+                try:
+                    macros = openai_utils.calcular_macros(st.session_state.plan)
+                except Exception:
+                    macros = {}
+                try:
+                    plano_compacto = openai_utils.resumir_plano(st.session_state.plan)
+                except Exception:
+                    plano_compacto = {}
+
+                # 3) Persiste tudo no PostgreSQL (cria/atualiza e obtém pac_id)
+                try:
+                    pac_id = repo.upsert_patient_payload(
+                        pac_id=st.session_state.get("pac_id"),
+                        respostas=st.session_state.data,
+                        plano=st.session_state.plan,
+                        plano_compacto=plano_compacto,
+                        macros=macros,
+                        name=st.session_state.data.get("nome"),
+                        email=st.session_state.data.get("email"),
+                    )
+                    st.session_state.pac_id = pac_id
+                except Exception as e:
+                    st.error(f"Erro ao salvar no banco: {e}")
+                    return
+
+                # 4) Gera PDF (plano final)
+                pdf_path = f"/tmp/{st.session_state.pac_id or st.session_state.user_id}.pdf"
                 try:
                     pdf_generator.create_pdf_report(
                         st.session_state.data,
@@ -592,10 +625,12 @@ def main() -> None:
                 except Exception as e:
                     st.error(f"Erro ao gerar o PDF: {e}")
                     return
-                # Envia e-mail (link estável)
+
+                # 5) Envia e-mail com link de reabertura (via ?id=<pac_id>)
                 try:
                     base_url = os.getenv("PUBLIC_BASE_URL", "")
-                    panel_link = f"{base_url}/?id={st.session_state.user_id}" if base_url else f"/?id={st.session_state.user_id}"
+                    # Link estável para reabrir painel por pac_id
+                    panel_link = f"{base_url}/?id={st.session_state.pac_id}" if base_url else f"/?id={st.session_state.pac_id}"
                     subject = "Seu Plano Alimentar NutriSigno"
                     body = (
                         "Olá {nome},\n\n"
@@ -606,13 +641,14 @@ def main() -> None:
                         f"{panel_link}\n\n"
                         "Atenciosamente,\nEquipe NutriSigno"
                     ).format(nome=st.session_state.data.get('nome'))
-                    attachments = [(f"nutrisigno_plano_{st.session_state.user_id}.pdf", pdf_bytes)]
-                    email_utils.send_email(
-                        recipient=st.session_state.data.get('email'),
-                        subject=subject,
-                        body=body,
-                        attachments=attachments,
-                    )
+                    attachments = [(f"nutrisigno_plano_{st.session_state.pac_id}.pdf", pdf_bytes)]
+                    if not SIMULATE:
+                        email_utils.send_email(
+                            recipient=st.session_state.data.get('email'),
+                            subject=subject,
+                            body=body,
+                            attachments=attachments,
+                        )
                 except Exception as e:
                     st.error(f"Erro ao enviar e-mail: {e}")
                     return
@@ -621,12 +657,12 @@ def main() -> None:
                 st.download_button(
                     label="Baixar plano em PDF",
                     data=pdf_bytes,
-                    file_name=f"nutrisigno_plano_{st.session_state.user_id}.pdf",
+                    file_name=f"nutrisigno_plano_{st.session_state.pac_id}.pdf",
                     mime="application/pdf",
                 )
                 st.markdown(
                     f"Você pode revisitar seus insights quando quiser através deste link: "
-                    f"[Painel de Insights](/?id={st.session_state.user_id})"
+                    f"[Painel de Insights](/?id={st.session_state.pac_id})"
                 )
 
 
