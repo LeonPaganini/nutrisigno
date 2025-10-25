@@ -39,6 +39,10 @@ SIMULATE: bool = os.getenv("SIMULATE", "0") == "1"
 PATH_BRISTOL = "assets/escala_bistrol.jpeg"
 PATH_URINA = "assets/escala_urina.jpeg"
 
+# Helper para padronização BR
+def fmt_br(d: date) -> str:
+    return d.strftime("%d/%m/%Y") if isinstance(d, date) else str(d)
+
 
 def get_zodiac_sign(birth_date: date) -> str:
     """Retorna o signo do zodíaco para uma data de nascimento."""
@@ -226,24 +230,25 @@ def main() -> None:
             email = st.text_input("E-mail")
             telefone = st.text_input("Telefone (WhatsApp)")
             peso = st.number_input("Peso (kg)", min_value=0.0, max_value=500.0, step=0.1)
-            altura = st.number_input("Altura (cm)", min_value=0.0, max_value=300.0, step=0.1)
-            data_nasc = st.date_input("Data de nascimento", min_value=date(1900, 1, 1), max_value=date.today())
+            altura = st.number_input("Altura (cm)", min_value=0.0, max_value=300.0, step=1)
+            data_nasc = st.date_input("Data de nascimento (DD/MM/AAAA)", min_value=date(1900, 1, 1), max_value=date.today())
             hora_nasc = st.time_input("Hora de nascimento", value=time(12, 0))
             local_nasc = st.text_input("Cidade e estado de nascimento")
-            submitted = st.form_submit_button("Próximo")
+            submitted = st.form_submit_button("Próximo", use_container_width=True)
             if submitted:
                 required_fields = [nome, email, telefone, peso, altura, data_nasc, local_nasc]
                 if any(field in (None, "") for field in required_fields):
                     st.error("Por favor preencha todos os campos obrigatórios.")
                 else:
                     signo_guess = get_zodiac_sign(data_nasc)
+                    # 🔴 Salvar data no padrão BR (DD/MM/AAAA)
                     st.session_state.data.update({
                         "nome": nome,
                         "email": email,
                         "telefone": telefone,
                         "peso": peso,
                         "altura": altura,
-                        "data_nascimento": data_nasc.isoformat(),  # repo aceita YYYY-MM-DD também
+                        "data_nascimento": fmt_br(data_nasc),   # <— padrão BR
                         "hora_nascimento": hora_nasc.isoformat(),
                         "local_nascimento": local_nasc,
                         "signo": signo_guess,  # será confirmado
@@ -325,7 +330,7 @@ def main() -> None:
                     ],
                     key="cor_urina",
                 )
-            submitted = st.form_submit_button("Próximo")
+            submitted = st.form_submit_button("Próximo", use_container_width=True)
             if submitted:
                 required = [historico, consumo_agua, atividade, tipo_fezes, cor_urina]
                 if any(field in (None, "") for field in required):
@@ -362,7 +367,7 @@ def main() -> None:
             rotina = st.slider(
                 "Quão importante é para você seguir uma rotina alimentar?", 1, 5, 3
             )
-            submitted = st.form_submit_button("Próximo")
+            submitted = st.form_submit_button("Próximo", use_container_width=True)
             if submitted:
                 required = [motivacao, estresse, habitos]
                 if any(field in (None, "") for field in required):
@@ -386,7 +391,7 @@ def main() -> None:
                 "Observações adicionais",
                 help="Compartilhe qualquer informação extra que julgue relevante.",
             )
-            submitted = st.form_submit_button("Prosseguir para insights")
+            submitted = st.form_submit_button("Prosseguir para insights", use_container_width=True)
             if submitted:
                 st.session_state.data.update({"observacoes": observacoes})
                 next_step()
@@ -600,7 +605,7 @@ def main() -> None:
                 try:
                     pac_id = repo.upsert_patient_payload(
                         pac_id=st.session_state.get("pac_id"),
-                        respostas=st.session_state.data,
+                        respostas=st.session_state.data,   # contém "data_nascimento" em DD/MM/AAAA
                         plano=st.session_state.plan,
                         plano_compacto=plano_compacto,
                         macros=macros,
