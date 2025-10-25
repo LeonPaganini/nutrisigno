@@ -231,28 +231,44 @@ def main() -> None:
             telefone = st.text_input("Telefone (WhatsApp)")
             peso = st.number_input("Peso (kg)", min_value=0.0, max_value=500.0, step=0.1)
             altura = st.number_input("Altura (cm)", min_value=0.0, max_value=300.0, step=1)
-            data_nasc = st.date_input("Data de nascimento (DD/MM/AAAA)", min_value=date(1900, 1, 1), max_value=date.today())
+            data_nasc = st.date_input(
+                "Data de nascimento (DD/MM/AAAA)",
+                min_value=date(1900, 1, 1),
+                max_value=date.today(),
+            )
             hora_nasc = st.time_input("Hora de nascimento", value=time(12, 0))
             local_nasc = st.text_input("Cidade e estado de nascimento")
+    
             submitted = st.form_submit_button("Próximo", use_container_width=True)
+    
             if submitted:
                 required_fields = [nome, email, telefone, peso, altura, data_nasc, local_nasc]
                 if any(field in (None, "") for field in required_fields):
                     st.error("Por favor preencha todos os campos obrigatórios.")
                 else:
                     signo_guess = get_zodiac_sign(data_nasc)
-                    # 🔴 Salvar data no padrão BR (DD/MM/AAAA)
+    
+                    # 🔹 Função auxiliar para padronizar telefone
+                    def normalizar_telefone(tel: str) -> str:
+                        return "".join(ch for ch in tel if ch.isdigit())
+    
+                    # 🔹 Padroniza telefone e data
+                    telefone_normalizado = normalizar_telefone(telefone)
+                    data_nasc_br = data_nasc.strftime("%d/%m/%Y")
+    
+                    # 🔹 Atualiza sessão com dados normalizados
                     st.session_state.data.update({
-                        "nome": nome,
-                        "email": email,
-                        "telefone": telefone,
+                        "nome": nome.strip().title(),
+                        "email": email.strip(),
+                        "telefone": telefone_normalizado,   # somente números
                         "peso": peso,
                         "altura": altura,
-                        "data_nascimento": fmt_br(data_nasc),   # <— padrão BR
+                        "data_nascimento": data_nasc_br,    # formato DD/MM/AAAA
                         "hora_nascimento": hora_nasc.isoformat(),
-                        "local_nascimento": local_nasc,
-                        "signo": signo_guess,  # será confirmado
+                        "local_nascimento": local_nasc.strip(),
+                        "signo": signo_guess,
                     })
+    
                     st.session_state["signo"] = signo_guess
                     next_step()
 
