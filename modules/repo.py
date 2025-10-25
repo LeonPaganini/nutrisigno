@@ -138,20 +138,21 @@ def get_by_phone_dob(telefone: str, dob_str: str):
     except Exception:
         raise ValueError("Data inválida. Use o formato DD/MM/AAAA.")
 
+    query = text("""
+        SELECT *
+        FROM patients
+        WHERE REPLACE(REPLACE(respostas->>'telefone', '-', ''), ' ', '') = %(telefone)s
+          AND (
+            respostas->>'data_nascimento' = TO_CHAR(%(dob)s::date, 'DD/MM/YYYY')
+            OR respostas->>'data_nascimento' = TO_CHAR(%(dob)s::date, 'YYYY-MM-DD')
+          )
+        LIMIT 1
+    """)
+
     with SessionLocal() as s:
-        sql = text("""
-            SELECT *
-            FROM patients
-            WHERE REPLACE(REPLACE(respostas->>'telefone', '-', ''), ' ', '') = :telefone
-              AND (
-                respostas->>'data_nascimento' = TO_CHAR(:dob::date, 'DD/MM/YYYY')
-                OR respostas->>'data_nascimento' = TO_CHAR(:dob::date, 'YYYY-MM-DD')
-              )
-            LIMIT 1
-        """)
-        row = s.execute(sql, {"telefone": telefone, "dob": dob}).mappings().first()
+        row = s.execute(query, {"telefone": telefone, "dob": dob}).mappings().first()
         return dict(row) if row else None
-        
+                
 def get_by_pac_id(pac_id: str) -> Optional[Dict[str, Any]]:
     with session_scope() as s:
         obj = s.get(Patient, pac_id)
