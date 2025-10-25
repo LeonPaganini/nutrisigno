@@ -11,7 +11,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from dateutil import parser as dateparser
 
-from .db import Base, session_scope
+from .db import Base, session_scope, SessionLocal 
 
 # -----------------------------------------------------------------------------
 # MODELO
@@ -123,30 +123,30 @@ def upsert_patient_payload(
 
         return obj.pac_id
 
-def get_by_phone_dob(phone_raw: str, dob_input: str) -> Optional[Dict[str, Any]]:
-    phone = normalize_phone(phone_raw)
-    dob = parse_dob_to_date(dob_input)
 
-    with session_scope() as s:
-        obj: Patient | None = (
-            s.query(Patient)
-            .filter(Patient.phone_norm == phone, Patient.dob == dob)
-            .first()
-        )
-        if not obj:
-            return None
 
-        return {
-            "pac_id": obj.pac_id,
-            "name": obj.name,
-            "email": obj.email,
-            "respostas": obj.respostas,
-            "plano_alimentar": obj.plano,
-            "plano_alimentar_compacto": obj.plano_compacto,
-            "macros": obj.macros,
-            "status": obj.status,
-            "updated_at": obj.updated_at.isoformat() if obj.updated_at else None,
-        }
+def get_by_phone_dob(telefone: str, dob_str: str):
+    """Busca paciente pelo telefone e data de nascimento (aceita DD/MM/AAAA)."""
+    telefone = telefone.strip().replace(" ", "").replace("-", "")
+    try:
+        # Normaliza a data; aceita DD/MM/AAAA ou YYYY-MM-DD
+        dob = parser.parse(dob_str, dayfirst=True).date()
+    except Exception:
+        raise ValueError("Data inválida. Use o formato DD/MM/AAAA.")
+
+    with SessionLocal() as s:
+        sql = text("""
+            SELECT *
+            FROM patients
+            WHERE REPLACE(REPLACE(respostas->>'telefone', '-', ''), ' ', '') = :telefone
+              AND (
+                respostas->>'data_nascimento' = TO_CHAR(:dob::date, 'DD/MM/YYYY')
+                OR respostas->>'data_nascimento' = TO_CHAR(:dob::date, 'YYYY-MM-DD')
+              )
+            LIMIT 1
+        """)
+        row = s.execute(sql, {"telefone": telefone, "dob": dob}).mappings().first()
+        return dict(row) if row else None
 
 def get_by_pac_id(pac_id: str) -> Optional[Dict[str, Any]]:
     with session_scope() as s:
