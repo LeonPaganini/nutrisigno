@@ -30,11 +30,11 @@ def main() -> None:
     app_bootstrap.ensure_bootstrap()  # garante tabelas
     st.set_page_config(page_title=PAGE_TITLE, page_icon="📊", layout="wide")
     st.title("📊 Acessar Resultados")
-    st.caption("Insira seu telefone e data de nascimento para visualizar seu painel novamente.")
+    st.caption("Insira seu telefone e a data de nascimento no formato DD/MM/AAAA para reabrir o painel.")
 
     with st.form("form_login_leve"):
         telefone = st.text_input("Telefone (com DDD; pode ter espaços/traços)")
-        dob = st.text_input("Data de nascimento (DD/MM/AAAA)")
+        dob = st.text_input("Data de nascimento (DD/MM/AAAA)")  # <— padrão BR
         submit = st.form_submit_button("Acessar", use_container_width=True)
 
     if submit:
@@ -43,6 +43,7 @@ def main() -> None:
             st.error("Muitas tentativas. Aguarde alguns minutos e tente novamente.")
             st.stop()
         try:
+            # repo.get_by_phone_dob aceita DD/MM/AAAA (dayfirst=True no parser)
             data = repo.get_by_phone_dob(telefone, dob)
             if not data:
                 st.session_state["login_attempts"] = attempts + 1
