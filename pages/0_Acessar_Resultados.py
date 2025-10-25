@@ -30,19 +30,20 @@ def main() -> None:
     st.title("📊 Acessar Resultados")
     st.caption("Insira seu telefone e a data de nascimento no formato DD/MM/AAAA.")
 
+    # pages/0_Acessar_Resultados.py
+# ...
     with st.form("form_login_leve"):
         telefone = st.text_input("Telefone (com DDD; pode ter espaços/traços)")
         dob = st.text_input("Data de nascimento (DD/MM/AAAA)")
         submit = st.form_submit_button("Acessar", use_container_width=True)
-
+    
     if submit:
         if not telefone or not dob:
             st.error("Por favor preencha os dois campos.")
             st.stop()
-
-        telefone = normalizar_telefone(telefone)
+    
         try:
-            data = repo.get_by_phone_dob(telefone, dob)
+            data = repo.get_by_phone_dob(repo.normalize_phone(telefone), dob)
             if not data:
                 st.error("Não encontramos nenhum cadastro com esses dados.")
                 st.stop()
