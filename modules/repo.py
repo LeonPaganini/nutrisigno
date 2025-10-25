@@ -130,27 +130,29 @@ from sqlalchemy import text
 from dateutil import parser
 from .db import SessionLocal
 
+
 def get_by_phone_dob(telefone: str, dob_str: str):
     """Busca paciente pelo telefone (somente números) e data de nascimento DD/MM/AAAA."""
-    telefone = ''.join(ch for ch in telefone if ch.isdigit())
+    telefone = "".join(ch for ch in telefone if ch.isdigit())
+
     try:
         dob = parser.parse(dob_str, dayfirst=True).date()
     except Exception:
         raise ValueError("Data inválida. Use o formato DD/MM/AAAA.")
 
-    query = text("""
+    sql = text("""
         SELECT *
         FROM patients
-        WHERE REPLACE(REPLACE(respostas->>'telefone', '-', ''), ' ', '') = %(telefone)s
+        WHERE REPLACE(REPLACE(respostas->>'telefone', '-', ''), ' ', '') = :telefone
           AND (
-            respostas->>'data_nascimento' = TO_CHAR(%(dob)s::date, 'DD/MM/YYYY')
-            OR respostas->>'data_nascimento' = TO_CHAR(%(dob)s::date, 'YYYY-MM-DD')
+            respostas->>'data_nascimento' = TO_CHAR(:dob::date, 'DD/MM/YYYY')
+            OR respostas->>'data_nascimento' = TO_CHAR(:dob::date, 'YYYY-MM-DD')
           )
         LIMIT 1
     """)
 
     with SessionLocal() as s:
-        row = s.execute(query, {"telefone": telefone, "dob": dob}).mappings().first()
+        row = s.execute(sql, {"telefone": telefone, "dob": dob}).mappings().first()
         return dict(row) if row else None
                 
 def get_by_pac_id(pac_id: str) -> Optional[Dict[str, Any]]:
