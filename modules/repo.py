@@ -125,11 +125,15 @@ def upsert_patient_payload(
 
 
 
+# modules/repo.py
+from sqlalchemy import text
+from dateutil import parser
+from .db import SessionLocal
+
 def get_by_phone_dob(telefone: str, dob_str: str):
-    """Busca paciente pelo telefone e data de nascimento (aceita DD/MM/AAAA)."""
-    telefone = telefone.strip().replace(" ", "").replace("-", "")
+    """Busca paciente pelo telefone (somente números) e data de nascimento DD/MM/AAAA."""
+    telefone = ''.join(ch for ch in telefone if ch.isdigit())
     try:
-        # Normaliza a data; aceita DD/MM/AAAA ou YYYY-MM-DD
         dob = parser.parse(dob_str, dayfirst=True).date()
     except Exception:
         raise ValueError("Data inválida. Use o formato DD/MM/AAAA.")
@@ -147,7 +151,7 @@ def get_by_phone_dob(telefone: str, dob_str: str):
         """)
         row = s.execute(sql, {"telefone": telefone, "dob": dob}).mappings().first()
         return dict(row) if row else None
-
+        
 def get_by_pac_id(pac_id: str) -> Optional[Dict[str, Any]]:
     with session_scope() as s:
         obj = s.get(Patient, pac_id)
