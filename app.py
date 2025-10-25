@@ -253,17 +253,20 @@ def main() -> None:
                         return "".join(ch for ch in tel if ch.isdigit())
     
                     # 🔹 Padroniza telefone e data
-                    telefone_normalizado = normalizar_telefone(telefone)
                     data_nasc_br = data_nasc.strftime("%d/%m/%Y")
     
                     # 🔹 Atualiza sessão com dados normalizados
+                    # ... topo do arquivo já importa "from modules import repo"
+
+                    telefone_normalizado = repo.normalize_phone(telefone)
+                    
                     st.session_state.data.update({
                         "nome": nome.strip().title(),
                         "email": email.strip(),
-                        "telefone": telefone_normalizado,   # somente números
+                        "telefone": telefone_normalizado,                 # somente dígitos
                         "peso": peso,
                         "altura": altura,
-                        "data_nascimento": data_nasc_br,    # formato DD/MM/AAAA
+                        "data_nascimento": repo.to_br_date_str(data_nasc),# DD/MM/AAAA
                         "hora_nascimento": hora_nasc.isoformat(),
                         "local_nascimento": local_nasc.strip(),
                         "signo": signo_guess,
