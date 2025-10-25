@@ -5,13 +5,14 @@ import re
 from datetime import datetime, date
 from typing import Optional, Dict, Any
 
-from sqlalchemy import Text, Date, TIMESTAMP, func
+from sqlalchemy import Text, Date, TIMESTAMP, func, text
 from sqlalchemy.dialects.postgresql import UUID as PGUUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from dateutil import parser as dateparser
 
-from .db import Base, session_scope, SessionLocal 
+from .db import Base, session_scope, SessionLocal
+
 
 # -----------------------------------------------------------------------------
 # MODELO
@@ -36,6 +37,7 @@ class Patient(Base):
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
 
+
 # -----------------------------------------------------------------------------
 # INIT (create_all)
 # -----------------------------------------------------------------------------
@@ -43,6 +45,7 @@ def init_models() -> None:
     """Cria as tabelas caso não existam (MVP sem Alembic)."""
     from .db import engine
     Base.metadata.create_all(bind=engine)
+
 
 # -----------------------------------------------------------------------------
 # HELPERS DE NORMALIZAÇÃO
@@ -57,18 +60,23 @@ def parse_dob_to_date(dob_input: str) -> date:
     Retorna datetime.date. Prioriza dayfirst.
     """
     s = (dob_input or "").strip()
-    # tenta alguns formatos comuns antes do dateutil
     fmts = ("%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y", "%d.%m.%Y")
     for fmt in fmts:
         try:
             return datetime.strptime(s, fmt).date()
         except ValueError:
             pass
-    # fallback tolerante
     dtx = dateparser.parse(s, dayfirst=True)
     if not dtx:
         raise ValueError("Data de nascimento inválida. Use DD/MM/AAAA.")
     return dtx.date()
+
+def to_br_date_str(d: date | datetime) -> str:
+    """Converte para DD/MM/AAAA."""
+    if isinstance(d, datetime):
+        d = d.date()
+    return d.strftime("%d/%m/%Y")
+
 
 # -----------------------------------------------------------------------------
 # REPOSITÓRIO
@@ -124,38 +132,37 @@ def upsert_patient_payload(
         return obj.pac_id
 
 
-
-# modules/repo.py
-from sqlalchemy import text
-from dateutil import parser
-from .db import SessionLocal
-
-
+# -----------------------------------------------------------------------------
+# CONSULTAS (sem erros de placeholder)
+# -----------------------------------------------------------------------------
 def get_by_phone_dob(telefone: str, dob_str: str):
-    """Busca paciente pelo telefone (somente números) e data de nascimento DD/MM/AAAA."""
-    telefone = "".join(ch for ch in telefone if ch.isdigit())
-
-    try:
-        dob = parser.parse(dob_str, dayfirst=True).date()
-    except Exception:
-        raise ValueError("Data inválida. Use o formato DD/MM/AAAA.")
+    """
+    Busca paciente pelo telefone e data de nascimento.
+    Aceita DD/MM/AAAA e YYYY-MM-DD.
+    Compatível com registros antigos e novos no JSON.
+    """
+    telefone = normalize_phone(telefone)
+    dob = parse_dob_to_date(dob_str)
 
     sql = text("""
         SELECT *
         FROM patients
-        WHERE REPLACE(REPLACE(respostas->>'telefone', '-', ''), ' ', '') = :telefone
-          AND (
-            respostas->>'data_nascimento' = TO_CHAR(:dob::date, 'DD/MM/YYYY')
-            OR respostas->>'data_nascimento' = TO_CHAR(:dob::date, 'YYYY-MM-DD')
-          )
+        WHERE phone_norm = :telefone
+           OR REPLACE(REPLACE(respostas->>'telefone', '-', ''), ' ', '') = :telefone
+          AND COALESCE(
+                to_date(respostas->>'data_nascimento', 'DD/MM/YYYY'),
+                to_date(respostas->>'data_nascimento', 'YYYY-MM-DD')
+              ) = :dob
         LIMIT 1
     """)
 
     with SessionLocal() as s:
         row = s.execute(sql, {"telefone": telefone, "dob": dob}).mappings().first()
         return dict(row) if row else None
-                
+
+
 def get_by_pac_id(pac_id: str) -> Optional[Dict[str, Any]]:
+    """Busca paciente completo por pac_id (retorna dicionário pronto)."""
     with session_scope() as s:
         obj = s.get(Patient, pac_id)
         if not obj:
@@ -171,3 +178,19 @@ def get_by_pac_id(pac_id: str) -> Optional[Dict[str, Any]]:
             "status": obj.status,
             "updated_at": obj.updated_at.isoformat() if obj.updated_at else None,
         }
+
+
+# -----------------------------------------------------------------------------
+# UTILIDADE OPCIONAL DE DEBUG
+# -----------------------------------------------------------------------------
+def list_recent_patients(limit: int = 10):
+    """Lista os últimos pacientes cadastrados (para debug)."""
+    sql = text("""
+        SELECT pac_id, name, phone_norm, dob, created_at
+        FROM patients
+        ORDER BY created_at DESC
+        LIMIT :lim
+    """)
+    with SessionLocal() as s:
+        rows = s.execute(sql, {"lim": limit}).mappings().all()
+        return [dict(r) for r in rows]
