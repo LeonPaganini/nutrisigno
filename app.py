@@ -17,8 +17,8 @@ from __future__ import annotations
 import os
 import io
 import uuid
-from datetime import date, time, datetime
-from typing import Dict, Any
+from datetime import date, time
+from typing import Dict
 
 from PIL import Image
 import streamlit as st
@@ -39,9 +39,23 @@ SIMULATE: bool = os.getenv("SIMULATE", "0") == "1"
 PATH_BRISTOL = "assets/escala_bistrol.jpeg"
 PATH_URINA = "assets/escala_urina.jpeg"
 
-# Helper para padronização BR
-def fmt_br(d: date) -> str:
-    return d.strftime("%d/%m/%Y") if isinstance(d, date) else str(d)
+
+# ---------------------------
+# Helpers
+# ---------------------------
+def _to_float(v, default=0.0) -> float:
+    """Converte qualquer valor (incluindo string '1,75') para float de forma segura."""
+    if v is None:
+        return float(default)
+    if isinstance(v, (int, float)):
+        return float(v)
+    if isinstance(v, str):
+        v = v.strip().replace(",", ".")
+        try:
+            return float(v)
+        except ValueError:
+            return float(default)
+    return float(default)
 
 
 def get_zodiac_sign(birth_date: date) -> str:
@@ -196,8 +210,7 @@ def main() -> None:
     initialize_session()
 
     # Reabrir sessões antigas via parâmetro ?id=<pac_id> (PostgreSQL)
-    params = st.query_params
-    pac_id_param = params.get("id", [None])[0] if params else None
+    pac_id_param = st.query_params.get("id")
     if pac_id_param and not st.session_state.get("loaded_external"):
         try:
             loaded = repo.get_by_pac_id(pac_id_param)
@@ -225,53 +238,73 @@ def main() -> None:
     # Etapa 1: dados pessoais
     if st.session_state.step == 1:
         st.header("1. Dados pessoais")
+
+        # valores prévios (podem vir como string do session/query; garantimos float)
+        _prev_peso = _to_float(st.session_state.data.get("peso"), 0.0)
+        _prev_altura = _to_float(st.session_state.data.get("altura"), 0.0)
+
         with st.form("dados_pessoais"):
-            nome = st.text_input("Nome completo")
-            email = st.text_input("E-mail")
-            telefone = st.text_input("Telefone (WhatsApp)")
-            peso = st.number_input("Peso (kg)", min_value=0.0, max_value=500.0, step=0.1)
-            altura = st.number_input("Altura (cm)", min_value=0.0, max_value=300.0, step=1)
+            nome = st.text_input("Nome completo", value=st.session_state.data.get("nome", ""))
+            email = st.text_input("E-mail", value=st.session_state.data.get("email", ""))
+            telefone = st.text_input("Telefone (WhatsApp)", value=st.session_state.data.get("telefone", ""))
+
+            peso = st.number_input(
+                "Peso (kg)",
+                min_value=0.0,
+                max_value=500.0,
+                step=0.1,                 # float
+                value=_prev_peso,         # float garantido
+                format="%.2f",
+            )
+            altura = st.number_input(
+                "Altura (cm)",
+                min_value=0.0,
+                max_value=300.0,
+                step=1.0,                 # float (evita mistura int/float)
+                value=_prev_altura,       # float garantido
+                format="%.0f",
+            )
+
             data_nasc = st.date_input(
                 "Data de nascimento (DD/MM/AAAA)",
                 min_value=date(1900, 1, 1),
                 max_value=date.today(),
+                value=st.session_state.data.get("data_nasc_date") or date(1990, 1, 1),
             )
-            hora_nasc = st.time_input("Hora de nascimento", value=time(12, 0))
-            local_nasc = st.text_input("Cidade e estado de nascimento")
-    
+            hora_nasc = st.time_input(
+                "Hora de nascimento",
+                value=time.fromisoformat(st.session_state.data.get("hora_nascimento", "12:00:00"))
+                if isinstance(st.session_state.data.get("hora_nascimento"), str) else time(12, 0)
+            )
+            local_nasc = st.text_input("Cidade e estado de nascimento", value=st.session_state.data.get("local_nascimento", ""))
+
             submitted = st.form_submit_button("Próximo", use_container_width=True)
-    
+
             if submitted:
-                required_fields = [nome, email, telefone, peso, altura, data_nasc, local_nasc]
+                required_fields = [nome, email, telefone, data_nasc, local_nasc]
                 if any(field in (None, "") for field in required_fields):
                     st.error("Por favor preencha todos os campos obrigatórios.")
                 else:
                     signo_guess = get_zodiac_sign(data_nasc)
-    
-                    # 🔹 Função auxiliar para padronizar telefone
-                    def normalizar_telefone(tel: str) -> str:
-                        return "".join(ch for ch in tel if ch.isdigit())
-    
-                    # 🔹 Padroniza telefone e data
-                    data_nasc_br = data_nasc.strftime("%d/%m/%Y")
-    
-                    # 🔹 Atualiza sessão com dados normalizados
-                    # ... topo do arquivo já importa "from modules import repo"
 
+                    # Normaliza telefone e data
                     telefone_normalizado = repo.normalize_phone(telefone)
-                    
+
+                    # Guardamos também o objeto date para futuro default do widget
+                    st.session_state.data["data_nasc_date"] = data_nasc
+
                     st.session_state.data.update({
                         "nome": nome.strip().title(),
                         "email": email.strip(),
-                        "telefone": telefone_normalizado,                 # somente dígitos
-                        "peso": peso,
-                        "altura": altura,
-                        "data_nascimento": repo.to_br_date_str(data_nasc),# DD/MM/AAAA
+                        "telefone": telefone_normalizado,                # somente dígitos
+                        "peso": _to_float(peso),
+                        "altura": _to_float(altura),
+                        "data_nascimento": repo.to_br_date_str(data_nasc),   # DD/MM/AAAA
                         "hora_nascimento": hora_nasc.isoformat(),
                         "local_nascimento": local_nasc.strip(),
                         "signo": signo_guess,
                     })
-    
+
                     st.session_state["signo"] = signo_guess
                     next_step()
 
@@ -299,11 +332,22 @@ def main() -> None:
             historico = st.text_area(
                 "Histórico de saúde e medicamentos",
                 help="Descreva brevemente quaisquer condições médicas ou medicamentos em uso.",
+                value=st.session_state.data.get("historico_saude", "")
             )
-            consumo_agua = st.number_input("Consumo diário de água (litros)", min_value=0.0, max_value=10.0, step=0.1)
+            consumo_agua = st.number_input(
+                "Consumo diário de água (litros)",
+                min_value=0.0,
+                max_value=10.0,
+                step=0.1,
+                value=_to_float(st.session_state.data.get("consumo_agua"), 1.5),
+                format="%.1f",
+            )
             atividade = st.selectbox(
                 "Nível de atividade física",
                 ["Sedentário", "Leve", "Moderado", "Intenso"],
+                index=["Sedentário", "Leve", "Moderado", "Intenso"].index(
+                    st.session_state.data.get("nivel_atividade", "Moderado")
+                ),
             )
             st.markdown("---")
             st.subheader("Tipo de Fezes (Escala de Bristol)")
@@ -326,6 +370,7 @@ def main() -> None:
                         "Tipo 7 - Líquidas.",
                     ],
                     key="tipo_fezes",
+                    index=0
                 )
             st.markdown("---")
             st.subheader("Cor da Urina")
@@ -348,6 +393,7 @@ def main() -> None:
                         "Castanho escuro (perigo extremo, MUITO desidratado!)",
                     ],
                     key="cor_urina",
+                    index=1
                 )
             submitted = st.form_submit_button("Próximo", use_container_width=True)
             if submitted:
@@ -357,7 +403,7 @@ def main() -> None:
                 else:
                     st.session_state.data.update({
                         "historico_saude": historico,
-                        "consumo_agua": consumo_agua,
+                        "consumo_agua": _to_float(consumo_agua, 1.5),
                         "nivel_atividade": atividade,
                         "tipo_fezes": tipo_fezes,
                         "cor_urina": cor_urina,
@@ -369,22 +415,29 @@ def main() -> None:
         st.header("4. Avaliação psicológica e perfil")
         with st.form("avaliacao_psicologica"):
             motivacao = st.slider(
-                "Nível de motivação para mudanças alimentares", 1, 5, 3
+                "Nível de motivação para mudanças alimentares", 1, 5,
+                int(st.session_state.data.get("motivacao", 3))
             )
-            estresse = st.slider("Nível de estresse atual", 1, 5, 3)
+            estresse = st.slider(
+                "Nível de estresse atual", 1, 5,
+                int(st.session_state.data.get("estresse", 3))
+            )
             habitos = st.text_area(
-                "Descreva brevemente seus hábitos alimentares", value="",
+                "Descreva brevemente seus hábitos alimentares",
+                value=st.session_state.data.get("habitos_alimentares", ""),
             )
             energia = st.select_slider(
                 "Como você descreveria sua energia diária?",
                 options=["Baixa", "Moderada", "Alta"],
-                value="Moderada",
+                value=st.session_state.data.get("energia_diaria", "Moderada"),
             )
             impulsividade = st.slider(
-                "Quão impulsivo(a) você é em relação à alimentação?", 1, 5, 3
+                "Quão impulsivo(a) você é em relação à alimentação?", 1, 5,
+                int(st.session_state.data.get("impulsividade_alimentar", 3))
             )
             rotina = st.slider(
-                "Quão importante é para você seguir uma rotina alimentar?", 1, 5, 3
+                "Quão importante é para você seguir uma rotina alimentar?", 1, 5,
+                int(st.session_state.data.get("rotina_alimentar", 3))
             )
             submitted = st.form_submit_button("Próximo", use_container_width=True)
             if submitted:
@@ -393,12 +446,12 @@ def main() -> None:
                     st.error("Preencha todos os campos obrigatórios.")
                 else:
                     st.session_state.data.update({
-                        "motivacao": motivacao,
-                        "estresse": estresse,
+                        "motivacao": int(motivacao),
+                        "estresse": int(estresse),
                         "habitos_alimentares": habitos,
                         "energia_diaria": energia,
-                        "impulsividade_alimentar": impulsividade,
-                        "rotina_alimentar": rotina,
+                        "impulsividade_alimentar": int(impulsividade),
+                        "rotina_alimentar": int(rotina),
                     })
                     next_step()
 
@@ -409,6 +462,7 @@ def main() -> None:
             observacoes = st.text_area(
                 "Observações adicionais",
                 help="Compartilhe qualquer informação extra que julgue relevante.",
+                value=st.session_state.data.get("observacoes", "")
             )
             submitted = st.form_submit_button("Prosseguir para insights", use_container_width=True)
             if submitted:
@@ -426,9 +480,9 @@ def main() -> None:
             ai_summary = ai_pack.get("ai_summary", "Resumo indisponível (modo simulado).")
         except Exception as e:
             st.warning(f"Modo fallback automático: {e}")
-            peso = float(st.session_state.data.get("peso") or 70)
-            altura = float(st.session_state.data.get("altura") or 170)
-            altura_m = altura / 100
+            peso = _to_float(st.session_state.data.get("peso"), 70)
+            altura = _to_float(st.session_state.data.get("altura"), 170)
+            altura_m = max(0.1, altura / 100.0)
             bmi = round(peso / (altura_m ** 2), 1)
             insights = {
                 "bmi": bmi,
@@ -441,7 +495,7 @@ def main() -> None:
                 "estresse": int(st.session_state.data.get("estresse") or 3),
                 "sign_hint": "Use seu signo como inspiração, não como prescrição.",
                 "consumption": {
-                    "water_liters": float(st.session_state.data.get("consumo_agua") or 1.5),
+                    "water_liters": _to_float(st.session_state.data.get("consumo_agua"), 1.5),
                     "recommended_liters": round(max(1.5, peso * 0.035), 1),
                 },
             }
