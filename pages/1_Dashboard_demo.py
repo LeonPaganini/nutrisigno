@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import html
-import unicodedata
 from typing import List, Tuple
 import streamlit as st
 import plotly.graph_objects as go
@@ -31,10 +30,11 @@ PRIMARY = "#2E6F59"
 MUTED = "#6b7280"
 
 ZODIAC_SYMBOLS = {
-    "aries": "♈︎", "touro": "♉︎", "gemeos": "♊︎",
-    "cancer": "♋︎", "leao": "♌︎", "virgem": "♍︎",
-    "libra": "♎︎", "escorpiao": "♏︎", "sagitario": "♐︎",
-    "capricornio": "♑︎", "aquario": "♒︎", "peixes": "♓︎",
+    "áries": "♈︎", "touro": "♉︎", "gêmeos": "♊︎", "gemeos": "♊︎",
+    "câncer": "♋︎", "cancer": "♋︎", "leão": "♌︎", "leao": "♌︎",
+    "virgem": "♍︎", "libra": "♎︎", "escorpião": "♏︎", "escorpiao": "♏︎",
+    "sagitário": "♐︎", "sagitario": "♐︎", "capricórnio": "♑︎", "capricornio": "♑︎",
+    "aquário": "♒︎", "aquario": "♒︎", "peixes": "♓︎",
 }
 
 IMC_FAIXAS: List[Tuple[str, float, float, str]] = [
@@ -45,30 +45,14 @@ IMC_FAIXAS: List[Tuple[str, float, float, str]] = [
     ("Obesidade II/III", 35.0, 60.0, "#e74c3c"),
 ]
 
-# Mapas de elemento (pedidos)
-ELEMENT_MAP = {
-    "Terra":  {"touro", "virgem", "capricornio"},
-    "Ar":     {"gemeos", "libra", "aquario"},
-    "Fogo":   {"aries", "leao", "sagitario"},
-    "Água":   {"escorpiao", "peixes", "cancer"},
-}
-
-def _strip_accents(s: str) -> str:
-    return "".join(c for c in unicodedata.normalize("NFD", s or "") if unicodedata.category(c) != "Mn").lower()
-
-def _signo_key(signo: str) -> str:
-    # normaliza: leão→leao, câncer→cancer, gêmeos→gemeos...
-    return _strip_accents((signo or "").strip())
+def _imc_categoria_cor(imc: float) -> Tuple[str, str]:
+    for nome, lo, hi, cor in IMC_FAIXAS:
+        if lo <= imc < hi:
+            return nome, cor
+    return "Indefinido", "#95a5a6"
 
 def _signo_symbol(signo: str) -> str:
-    return ZODIAC_SYMBOLS.get(_signo_key(signo), "✦")
-
-def _signo_elemento(signo: str) -> str:
-    key = _signo_key(signo)
-    for elem, conjunto in ELEMENT_MAP.items():
-        if key in conjunto:
-            return elem
-    return "—"
+    return ZODIAC_SYMBOLS.get((signo or "").strip().lower(), "✦")
 
 # ==========================
 # Estilo (CSS leve)
@@ -109,7 +93,7 @@ def _style():
 def _plot_imc_horizontal(imc: float):
     faixa_max = 40.0
     imc_clip = max(0.0, min(faixa_max, imc))
-    categoria, cor = next(((n, c) for n, lo, hi, c in IMC_FAIXAS if lo <= imc_clip < hi), ("Indefinido", "#95a5a6"))
+    categoria, cor = _imc_categoria_cor(imc_clip)
 
     fig = go.Figure()
     # faixa base
@@ -163,7 +147,7 @@ def _plot_agua(consumido: float, recomendado: float):
 def main() -> None:
     st.set_page_config(page_title="Dashboard (Demo)", page_icon="📊", layout="wide")
     st.title("📊 Dashboard — Demo (mock)")
-    st.caption("Inclui card de Elemento e layout: Linha 1 (Signo | Perfil | Estratégia) • Linha 2 (Elemento | Signo ícone).")
+    st.caption("Versão de demonstração com dados mock, mantendo nomes das variáveis do projeto.")
 
     _style()
 
@@ -171,14 +155,13 @@ def main() -> None:
     peso = float(respostas.get("peso_kg") or 0)
     altura_m = float(respostas.get("altura_m") or 0)
     imc = round(peso / (altura_m**2), 1) if (peso and altura_m) else 0.0
-    elemento = _signo_elemento(respostas["signo"])
 
-    # ===== Linha 1: Signo (texto) | Perfil | Estratégia =====
+    # ===== Linha 1: Signo | Perfil | Estratégia =====
     col1, col2, col3 = st.columns([1, 2, 2], gap="medium")
     with col1:
         st.markdown('<div class="card"><div class="card-title">Signo</div>', unsafe_allow_html=True)
-        st.markdown(f'<div class="kpi">{html.escape(respostas["signo"])}</div>', unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="square">{html.escape(_signo_symbol(respostas["signo"]))}</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="small-muted">{html.escape(respostas["signo"])}</div></div>', unsafe_allow_html=True)
     with col2:
         st.markdown(f'''
         <div class="card">
@@ -194,18 +177,7 @@ def main() -> None:
         </div>
         ''', unsafe_allow_html=True)
 
-    # ===== Linha 2: Elemento | Signo (ícone) =====
-    colE, colS = st.columns([1, 1], gap="medium")
-    with colE:
-        st.markdown('<div class="card"><div class="card-title">Elemento</div>', unsafe_allow_html=True)
-        st.markdown(f'<div class="kpi">{html.escape(elemento)}</div>', unsafe_allow_html=True)
-        st.markdown('</div>', unsafe_allow_html=True)
-    with colS:
-        st.markdown('<div class="card"><div class="card-title">Signo (ícone)</div>', unsafe_allow_html=True)
-        st.markdown(f'<div class="square">{html.escape(_signo_symbol(respostas["signo"]))}</div>', unsafe_allow_html=True)
-        st.markdown(f'<div class="small-muted">{html.escape(respostas["signo"])}</div></div>', unsafe_allow_html=True)
-
-    # ===== Linha 3: Bristol | Urina =====
+    # ===== Linha 2: Bristol | Urina =====
     st.markdown('<div class="two-col">', unsafe_allow_html=True)
     st.markdown(f'''
     <div class="card">
@@ -223,7 +195,7 @@ def main() -> None:
     ''', unsafe_allow_html=True)
     st.markdown('</div>', unsafe_allow_html=True)
 
-    # ===== Linha 4: IMC + Hidratação =====
+    # ===== Linha 3: IMC + Hidratação =====
     colA, colB = st.columns(2, gap="medium")
     with colA:
         fig_imc, categoria = _plot_imc_horizontal(imc)
@@ -243,12 +215,12 @@ def main() -> None:
         st.markdown('<div class="card"><div class="card-title">Hidratação</div>', unsafe_allow_html=True)
         st.plotly_chart(fig_agua, use_container_width=True, config={"displayModeBar": False})
         ok = consumo >= recomendado
-        badge = '<span style="background:#e8f7ef;color:#127a46;padding:2px 8px;border-radius:999px;font-size:12px">Meta atingida</span>' \
+        badge = f'<span style="background:#e8f7ef;color:#127a46;padding:2px 8px;border-radius:999px;font-size:12px">Meta atingida</span>' \
                 if ok else \
-                '<span style="background:#fff5e6;color:#8a5200;padding:2px 8px;border-radius:999px;font-size:12px">Abaixo do ideal</span>'
+                f'<span style="background:#fff5e6;color:#8a5200;padding:2px 8px;border-radius:999px;font-size:12px">Abaixo do ideal</span>'
         st.markdown(f'<div class="sub">{badge}</div></div>', unsafe_allow_html=True)
 
-    # ===== Linha 5: Comportamento (chips dentro do card) =====
+    # ===== Linha 4: Comportamento (chips dentro do card) =====
     chips = "".join([f"<span>{html.escape(x)}</span>" for x in respostas.get("comportamentos", [])]) \
             or '<span style="color:#718096;">Sem itens cadastrados.</span>'
     st.markdown(
