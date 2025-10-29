@@ -17,12 +17,14 @@ from __future__ import annotations
 import os
 import io
 import uuid
-from datetime import date, time
+from datetime import date, time, datetime
 from typing import Dict
 
 from PIL import Image
 import streamlit as st
 import matplotlib.pyplot as plt
+
+import re
 
 # Módulos internos do projeto
 from modules import openai_utils, pdf_generator, email_utils
@@ -57,6 +59,23 @@ def _to_float(v, default=0.0) -> float:
             return float(default)
     return float(default)
 
+
+_BR_DATE_RE = re.compile(r"^\s*(\d{2})/(\d{2})/(\d{4})\s*$")
+
+def parse_br_date(s: str) -> date | None:
+    """
+    Converte 'DD/MM/AAAA' -> datetime.date. Retorna None se inválida.
+    """
+    if not isinstance(s, str):
+        return None
+    m = _BR_DATE_RE.match(s)
+    if not m:
+        return None
+    d, mth, y = map(int, m.groups())
+    try:
+        return date(y, mth, d)
+    except ValueError:
+        return None
 
 def get_zodiac_sign(birth_date: date) -> str:
     """Retorna o signo do zodíaco para uma data de nascimento."""
@@ -265,11 +284,10 @@ def main() -> None:
                 format="%.0f",
             )
 
-            data_nasc = st.date_input(
+            data_nasc_str = st.text_input(
                 "Data de nascimento (DD/MM/AAAA)",
-                min_value=date(1900, 1, 1),
-                max_value=date.today(),
-                value=st.session_state.data.get("data_nasc_date") or date(1990, 1, 1),
+                value=st.session_state.data.get("data_nascimento", ""),  # preenche com string se já existir
+                placeholder="ex: 27/03/1993",
             )
             hora_nasc = st.time_input(
                 "Hora de nascimento",
@@ -281,33 +299,37 @@ def main() -> None:
             submitted = st.form_submit_button("Próximo", use_container_width=True)
 
             if submitted:
-                required_fields = [nome, email, telefone, data_nasc, local_nasc]
+                # validação básica de preenchimento
+                required_fields = [nome, email, telefone, data_nasc_str, local_nasc]
                 if any(field in (None, "") for field in required_fields):
                     st.error("Por favor preencha todos os campos obrigatórios.")
                 else:
-                    signo_guess = get_zodiac_sign(data_nasc)
-
-                    # Normaliza telefone e data
+                    # parse da data BR
+                    data_nasc_date = parse_br_date(data_nasc_str)
+                    if not data_nasc_date:
+                        st.error("Data de nascimento inválida. Use o formato DD/MM/AAAA.")
+                        st.stop()
+                
+                    signo_guess = get_zodiac_sign(data_nasc_date)
                     telefone_normalizado = repo.normalize_phone(telefone)
-
-                    # Guardamos também o objeto date para futuro default do widget
-                    st.session_state.data["data_nasc_date"] = data_nasc
-
+                
+                    # guarda também o objeto date para ajudar em cálculos e defaults futuros
+                    st.session_state.data["data_nasc_date"] = data_nasc_date
+                
                     st.session_state.data.update({
                         "nome": nome.strip().title(),
                         "email": email.strip(),
-                        "telefone": telefone_normalizado,                # somente dígitos
+                        "telefone": telefone_normalizado,
                         "peso": _to_float(peso),
                         "altura": _to_float(altura),
-                        "data_nascimento": repo.to_br_date_str(data_nasc),   # DD/MM/AAAA
+                        "data_nascimento": data_nasc_str.strip(),     # <<< string BR no banco
                         "hora_nascimento": hora_nasc.isoformat(),
                         "local_nascimento": local_nasc.strip(),
                         "signo": signo_guess,
                     })
-
+                
                     st.session_state["signo"] = signo_guess
                     next_step()
-
     # Etapa 2: Seleção do Signo (GRID)
     elif st.session_state.step == 2:
         st.header("2. Selecione seu signo")
