@@ -153,20 +153,27 @@ def get_by_phone_dob(telefone: str, dob_str: str):
     dob = parse_dob_to_date(dob_str)
 
     sql = text("""
-        SELECT *
+        SELECT pac_id
         FROM patients
-        WHERE phone_norm = :telefone
-           OR REPLACE(REPLACE(respostas->>'telefone', '-', ''), ' ', '') = :telefone
-          AND COALESCE(
-                to_date(respostas->>'data_nascimento', 'DD/MM/YYYY'),
-                to_date(respostas->>'data_nascimento', 'YYYY-MM-DD')
-              ) = :dob
+        WHERE (
+                phone_norm = :telefone
+             OR REPLACE(REPLACE(respostas->>'telefone', '-', ''), ' ', '') = :telefone
+              )
+          AND (
+                dob = :dob
+             OR COALESCE(
+                    to_date(respostas->>'data_nascimento', 'DD/MM/YYYY'),
+                    to_date(respostas->>'data_nascimento', 'YYYY-MM-DD')
+                ) = :dob
+              )
         LIMIT 1
     """)
 
     with SessionLocal() as s:
         row = s.execute(sql, {"telefone": telefone, "dob": dob}).mappings().first()
-        return dict(row) if row else None
+        if not row:
+            return None
+    return get_by_pac_id(row["pac_id"])
 
 
 def get_by_pac_id(pac_id: str) -> Optional[Dict[str, Any]]:
