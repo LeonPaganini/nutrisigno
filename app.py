@@ -32,7 +32,7 @@ from modules.app_bootstrap import ensure_bootstrap
 from modules import repo  # <- PostgreSQL (SQLAlchemy)
 
 # Garante que as tabelas existam (Render/produção)
-ensure_bootstrap()
+ok, msg = ensure_bootstrap()
 
 # Quando SIMULATE=1 (ou chaves faltarem), serviços externos são simulados
 SIMULATE: bool = os.getenv("SIMULATE", "0") == "1"
