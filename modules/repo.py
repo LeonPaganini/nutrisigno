@@ -2,16 +2,21 @@
 from __future__ import annotations
 
 import re
+import uuid
 from datetime import datetime, date
 from typing import Optional, Dict, Any
 
 from sqlalchemy import Text, Date, TIMESTAMP, func, text
 from sqlalchemy.dialects.postgresql import UUID as PGUUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.types import JSON as SQLJSON
 
 from dateutil import parser as dateparser
 
-from .db import Base, session_scope, SessionLocal
+from .db import Base, session_scope, SessionLocal, engine
+
+UUID_TYPE = PGUUID(as_uuid=False) if engine.dialect.name != "sqlite" else Text
+JSON_TYPE = JSONB if engine.dialect.name != "sqlite" else SQLJSON
 
 
 # -----------------------------------------------------------------------------
@@ -20,17 +25,21 @@ from .db import Base, session_scope, SessionLocal
 class Patient(Base):
     __tablename__ = "patients"
 
-    pac_id: Mapped[str] = mapped_column(PGUUID(as_uuid=False), primary_key=True)
+    pac_id: Mapped[str] = mapped_column(
+        UUID_TYPE,
+        primary_key=True,
+        default=lambda: str(uuid.uuid4()),
+    )
     name:   Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     email:  Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     phone_norm: Mapped[str] = mapped_column(Text, nullable=False, index=True)
     dob:        Mapped[date] = mapped_column(Date,  nullable=False, index=True)
 
-    respostas:      Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
-    plano:          Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
-    plano_compacto: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
-    macros:         Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    respostas:      Mapped[dict] = mapped_column(JSON_TYPE, nullable=False, default=dict)
+    plano:          Mapped[dict] = mapped_column(JSON_TYPE, nullable=False, default=dict)
+    plano_compacto: Mapped[dict] = mapped_column(JSON_TYPE, nullable=False, default=dict)
+    macros:         Mapped[dict] = mapped_column(JSON_TYPE, nullable=False, default=dict)
 
     status: Mapped[str] = mapped_column(Text, nullable=False, default="pendente_validacao")
 
@@ -43,7 +52,6 @@ class Patient(Base):
 # -----------------------------------------------------------------------------
 def init_models() -> None:
     """Cria as tabelas caso não existam (MVP sem Alembic)."""
-    from .db import engine
     Base.metadata.create_all(bind=engine)
 
 
@@ -145,20 +153,27 @@ def get_by_phone_dob(telefone: str, dob_str: str):
     dob = parse_dob_to_date(dob_str)
 
     sql = text("""
-        SELECT *
+        SELECT pac_id
         FROM patients
-        WHERE phone_norm = :telefone
-           OR REPLACE(REPLACE(respostas->>'telefone', '-', ''), ' ', '') = :telefone
-          AND COALESCE(
-                to_date(respostas->>'data_nascimento', 'DD/MM/YYYY'),
-                to_date(respostas->>'data_nascimento', 'YYYY-MM-DD')
-              ) = :dob
+        WHERE (
+                phone_norm = :telefone
+             OR REPLACE(REPLACE(respostas->>'telefone', '-', ''), ' ', '') = :telefone
+              )
+          AND (
+                dob = :dob
+             OR COALESCE(
+                    to_date(respostas->>'data_nascimento', 'DD/MM/YYYY'),
+                    to_date(respostas->>'data_nascimento', 'YYYY-MM-DD')
+                ) = :dob
+              )
         LIMIT 1
     """)
 
     with SessionLocal() as s:
         row = s.execute(sql, {"telefone": telefone, "dob": dob}).mappings().first()
-        return dict(row) if row else None
+        if not row:
+            return None
+    return get_by_pac_id(row["pac_id"])
 
 
 def get_by_pac_id(pac_id: str) -> Optional[Dict[str, Any]]:
