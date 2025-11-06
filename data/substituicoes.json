@@ -1,1 +1,548 @@
-{}
+{
+  "observacao": "Todas as opções listadas equivalem a 1 porção.",
+  "categorias": {
+    "Vegetais_livres": {
+      "descricao": "Vegetais crus ou cozidos — categoria livre",
+      "itens": [
+        "Acelga",
+        "Abobrinha",
+        "Abóbora",
+        "Quiabo",
+        "Agrião",
+        "Aipo",
+        "Nabo",
+        "Alface",
+        "Berinjela",
+        "Alho-poró",
+        "Vagem",
+        "Bertalha",
+        "Brócolis",
+        "Beterraba",
+        "Repolho",
+        "Chicória",
+        "Cebola",
+        "Cenoura",
+        "Tomate",
+        "Rúcula",
+        "Couve-flor",
+        "Chuchu",
+        "Espinafre",
+        "Palmito",
+        "Couve",
+        "Folha de mostarda",
+        "Pepino",
+        "Jiló"
+      ]
+    },
+    "Carboidratos_e_derivados": {
+      "descricao": "Grupo dos carboidratos, farinhas, cereais, massas e pães",
+      "itens": [
+        {
+          "nome": "Farinha de aveia",
+          "porcao": "1 colher de sopa cheia"
+        },
+        {
+          "nome": "Farinha de coco",
+          "porcao": "1 colher de sopa"
+        },
+        {
+          "nome": "Farinha de mandioca",
+          "porcao": "1 colher de sopa cheia"
+        },
+        {
+          "nome": "Farinha de trigo",
+          "porcao": "1 colher de sopa cheia"
+        },
+        {
+          "nome": "Aveia em flocos",
+          "porcao": "2 colheres de sopa"
+        },
+        {
+          "nome": "Farelo de aveia",
+          "porcao": "3 colheres de sopa"
+        },
+        {
+          "nome": "Arroz branco",
+          "porcao": "3 colheres de sopa"
+        },
+        {
+          "nome": "Arroz parboilizado",
+          "porcao": "3 colheres de sopa"
+        },
+        {
+          "nome": "Arroz integral",
+          "porcao": "2 colheres de sopa"
+        },
+        {
+          "nome": "Macarrão",
+          "porcao": "3 colheres de sopa"
+        },
+        {
+          "nome": "Milho de pipoca (pronto)",
+          "porcao": "3 xícaras de chá"
+        },
+        {
+          "nome": "Quinoa (cozida)",
+          "porcao": "3 colheres de sopa"
+        },
+        {
+          "nome": "Tabule",
+          "porcao": "2 colheres de sopa"
+        },
+        {
+          "nome": "Tapioca",
+          "porcao": "2 colheres de sopa"
+        },
+        {
+          "nome": "Pão árabe (sírio)",
+          "porcao": "1/2 unidade"
+        },
+        {
+          "nome": "Pão de forma integral",
+          "porcao": "1 fatia"
+        },
+        {
+          "nome": "Pão de forma",
+          "porcao": "1 fatia"
+        },
+        {
+          "nome": "Pão francês",
+          "porcao": "1/2 unidade"
+        },
+        {
+          "nome": "Pão de hambúrguer",
+          "porcao": "1/2 unidade"
+        },
+        {
+          "nome": "Torrada",
+          "porcao": "2 unidades"
+        }
+      ]
+    },
+    "Vegetais_ricos_em_carboidratos": {
+      "descricao": "Vegetais e hortaliças com maior teor de carboidrato",
+      "itens": [
+        {
+          "nome": "Aipim cozido",
+          "porcao": "2 colheres de sopa"
+        },
+        {
+          "nome": "Batata doce cozida",
+          "porcao": "4 rodelas"
+        },
+        {
+          "nome": "Batata baroa (mandioquinha) cozida",
+          "porcao": "2 colheres de sopa"
+        },
+        {
+          "nome": "Batata inglesa cozida",
+          "porcao": "1 e 1/2 colher de sopa"
+        },
+        {
+          "nome": "Milho",
+          "porcao": "2 colheres de sopa"
+        }
+      ]
+    },
+    "Frutas_frescas": {
+      "itens": [
+        {
+          "nome": "Acerola",
+          "porcao": "10 unidades"
+        },
+        {
+          "nome": "Abacaxi",
+          "porcao": "2 fatias"
+        },
+        {
+          "nome": "Ameixa",
+          "porcao": "1 unidade grande"
+        },
+        {
+          "nome": "Banana prata",
+          "porcao": "1 unidade pequena"
+        },
+        {
+          "nome": "Caju",
+          "porcao": "1 unidade grande"
+        },
+        {
+          "nome": "Caqui",
+          "porcao": "1/2 unidade grande"
+        },
+        {
+          "nome": "Cereja",
+          "porcao": "12 unidades"
+        },
+        {
+          "nome": "Cajá",
+          "porcao": "1 unidade grande"
+        },
+        {
+          "nome": "Goiaba",
+          "porcao": "1 unidade grande"
+        },
+        {
+          "nome": "Jaca",
+          "porcao": "15 bagos"
+        },
+        {
+          "nome": "Kiwi",
+          "porcao": "1 unidade grande"
+        },
+        {
+          "nome": "Laranja",
+          "porcao": "1 unidade pequena"
+        },
+        {
+          "nome": "Maçã",
+          "porcao": "1 unidade média"
+        },
+        {
+          "nome": "Mamão papaia",
+          "porcao": "1/2 unidade"
+        },
+        {
+          "nome": "Manga",
+          "porcao": "1 fatia média"
+        },
+        {
+          "nome": "Melão",
+          "porcao": "1 fatia grande"
+        },
+        {
+          "nome": "Melancia",
+          "porcao": "1 fatia grande"
+        },
+        {
+          "nome": "Morango",
+          "porcao": "1 e 1/2 xícara de chá"
+        },
+        {
+          "nome": "Pêra",
+          "porcao": "1/2 unidade grande"
+        },
+        {
+          "nome": "Pêssego",
+          "porcao": "1 unidade grande"
+        },
+        {
+          "nome": "Tangerina",
+          "porcao": "1 unidade grande"
+        },
+        {
+          "nome": "Uva Itália ou Rubi",
+          "porcao": "15 bagos"
+        }
+      ]
+    },
+    "Frutas_secas": {
+      "itens": [
+        {
+          "nome": "Ameixa seca",
+          "porcao": "3 unidades médias sem caroço"
+        },
+        {
+          "nome": "Damasco",
+          "porcao": "3 unidades"
+        },
+        {
+          "nome": "Figo seco",
+          "porcao": "1 unidade"
+        },
+        {
+          "nome": "Tâmara",
+          "porcao": "3 unidades pequenas"
+        },
+        {
+          "nome": "Uva-passa",
+          "porcao": "1 colher de sopa rasa"
+        }
+      ]
+    },
+    "Sucos": {
+      "itens": [
+        {
+          "nome": "Água de coco verde",
+          "porcao": "1 copo de 200 mL"
+        },
+        {
+          "nome": "Suco de laranja",
+          "porcao": "1 copo de 150 mL"
+        },
+        {
+          "nome": "Suco de tangerina",
+          "porcao": "1 copo de 150 mL"
+        },
+        {
+          "nome": "Suco de uva integral",
+          "porcao": "1/2 copo de 110 mL"
+        }
+      ]
+    },
+    "Gorduras": {
+      "itens": [
+        {
+          "nome": "Abacate",
+          "porcao": "2 colheres de sopa"
+        },
+        {
+          "nome": "Avelã",
+          "porcao": "6 unidades"
+        },
+        {
+          "nome": "Amêndoa",
+          "porcao": "7 unidades"
+        },
+        {
+          "nome": "Amendoim sem casca",
+          "porcao": "15 unidades"
+        },
+        {
+          "nome": "Azeite",
+          "porcao": "1 colher de sobremesa"
+        },
+        {
+          "nome": "Óleo de soja",
+          "porcao": "1 colher de sobremesa"
+        },
+        {
+          "nome": "Azeitona",
+          "porcao": "8 unidades médias"
+        },
+        {
+          "nome": "Castanha-do-pará",
+          "porcao": "1 unidade grande"
+        },
+        {
+          "nome": "Castanha de caju",
+          "porcao": "6 unidades"
+        },
+        {
+          "nome": "Gergelim",
+          "porcao": "1 colher de sobremesa"
+        },
+        {
+          "nome": "Semente de linhaça",
+          "porcao": "1 colher de sobremesa"
+        },
+        {
+          "nome": "Semente de abóbora",
+          "porcao": "1 colher de sopa"
+        },
+        {
+          "nome": "Semente de chia",
+          "porcao": "1 colher de sobremesa"
+        },
+        {
+          "nome": "Coco ralado",
+          "porcao": "1 colher de sobremesa"
+        },
+        {
+          "nome": "Coco in natura",
+          "porcao": "1 colher de sopa"
+        },
+        {
+          "nome": "Creme de leite",
+          "porcao": "1 colher de sopa"
+        },
+        {
+          "nome": "Margarina",
+          "porcao": "1 colher de chá"
+        },
+        {
+          "nome": "Queijo Catupiry",
+          "porcao": "1 colher de sobremesa"
+        }
+      ]
+    },
+    "Proteina_animal_medio_gordura": {
+      "itens": [
+        {
+          "nome": "Cação",
+          "porcao": "1 posta pequena"
+        },
+        {
+          "nome": "Coxa de frango",
+          "porcao": "2 coxas"
+        },
+        {
+          "nome": "Carne moída",
+          "porcao": "5 colheres de sopa"
+        },
+        {
+          "nome": "Filé mignon cru",
+          "porcao": "1 bife pequeno"
+        },
+        {
+          "nome": "Peixe namorado",
+          "porcao": "1 filé médio"
+        },
+        {
+          "nome": "Sashimi de salmão",
+          "porcao": "10 peças"
+        },
+        {
+          "nome": "Sardinha assada",
+          "porcao": "2 unidades"
+        },
+        {
+          "nome": "Bife de fígado",
+          "porcao": "1 bife médio"
+        },
+        {
+          "nome": "Coração",
+          "porcao": "12 unidades"
+        },
+        {
+          "nome": "Fígado de frango",
+          "porcao": "2 unidades"
+        },
+        {
+          "nome": "Moela",
+          "porcao": "3 unidades"
+        }
+      ]
+    },
+    "Proteina_animal_alto_gordura": {
+      "itens": [
+        {
+          "nome": "Cupim",
+          "porcao": "1 bife pequeno de 100 g"
+        },
+        {
+          "nome": "Fraldinha",
+          "porcao": "2 bifes pequenos de 100 g"
+        },
+        {
+          "nome": "Peito de boi",
+          "porcao": "3 bifes pequenos de 100 g"
+        }
+      ]
+    },
+    "Proteina_animal_baixo_gordura": {
+      "itens": [
+        {
+          "nome": "Clara de ovo",
+          "porcao": "4 claras"
+        },
+        {
+          "nome": "Ovo inteiro",
+          "porcao": "1 unidade"
+        },
+        {
+          "nome": "Linguado",
+          "porcao": "1 filé pequeno"
+        },
+        {
+          "nome": "Camarão",
+          "porcao": "2 unidades grandes"
+        },
+        {
+          "nome": "Corvina",
+          "porcao": "1 filé pequeno"
+        },
+        {
+          "nome": "Filé de frango",
+          "porcao": "1 filé pequeno"
+        }
+      ]
+    },
+    "Proteina_vegetal": {
+      "itens": [
+        {
+          "nome": "Bebida de soja",
+          "porcao": "1 copo de 320 mL"
+        },
+        {
+          "nome": "Farinha de soja",
+          "porcao": "2 colheres de sopa"
+        },
+        {
+          "nome": "Caldo de feijão preto",
+          "porcao": "1 combuca de 400 mL"
+        },
+        {
+          "nome": "Feijões (cozidos)",
+          "porcao": "4 colheres de sopa"
+        },
+        {
+          "nome": "Grão-de-bico (cozido)",
+          "porcao": "2 colheres de sopa"
+        }
+      ]
+    },
+    "Laticinios_magros": {
+      "itens": [
+        {
+          "nome": "Iogurte natural light",
+          "porcao": "1 pote"
+        },
+        {
+          "nome": "Iogurte light sabor fruta",
+          "porcao": "1 copo de 230 mL"
+        },
+        {
+          "nome": "Iogurte natural desnatado",
+          "porcao": "1 copo de 170 mL"
+        },
+        {
+          "nome": "Leite desnatado em pó",
+          "porcao": "2 colheres de sopa"
+        },
+        {
+          "nome": "Leite desnatado",
+          "porcao": "1 copo de 280 mL"
+        },
+        {
+          "nome": "Leite semidesnatado",
+          "porcao": "1 copo de 220 mL"
+        },
+        {
+          "nome": "Polenguinho light",
+          "porcao": "2 unidades"
+        },
+        {
+          "nome": "Queijo minas frescal",
+          "porcao": "1 fatia média"
+        },
+        {
+          "nome": "Ricota fresca",
+          "porcao": "1 fatia média"
+        }
+      ]
+    },
+    "Laticinios_medio_alto_gordura": {
+      "itens": [
+        {
+          "nome": "Leite integral",
+          "porcao": "1 copo de 200 mL"
+        },
+        {
+          "nome": "Queijo minas",
+          "porcao": "2 fatias finas"
+        },
+        {
+          "nome": "Queijo mussarela",
+          "porcao": "2 fatias finas"
+        },
+        {
+          "nome": "Queijo prato",
+          "porcao": "2 fatias finas"
+        },
+        {
+          "nome": "Queijo provolone",
+          "porcao": "1 fatia redonda"
+        },
+        {
+          "nome": "Kefir",
+          "porcao": "1 copo de 150 mL"
+        },
+        {
+          "nome": "Requeijão",
+          "porcao": "1 colher de sopa"
+        }
+      ]
+    }
+  }
+}
