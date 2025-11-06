@@ -17,12 +17,15 @@ from __future__ import annotations
 import os
 import io
 import uuid
+import html
+import unicodedata
 from datetime import date, time, datetime
 from typing import Dict
 
 from PIL import Image
 import streamlit as st
 import matplotlib.pyplot as plt
+import plotly.graph_objects as go
 
 import re
 
@@ -218,6 +221,235 @@ def render_selected_info() -> None:
         f"<div class='soft-box'>Você selecionou: <b style='color:{meta['color']}'>{meta['emoji']} {signo}</b></div>",
         unsafe_allow_html=True,
     )
+
+
+# =========================
+# Dashboard helpers (compartilhados com o demo)
+# =========================
+DASH_MUTED = "#6b7280"
+
+ZODIAC_SYMBOLS = {
+    "áries": "♈︎", "touro": "♉︎", "gêmeos": "♊︎", "gemeos": "♊︎",
+    "câncer": "♋︎", "cancer": "♋︎", "leão": "♌︎", "leao": "♌︎",
+    "virgem": "♍︎", "libra": "♎︎", "escorpião": "♏︎", "escorpiao": "♏︎",
+    "sagitário": "♐︎", "sagitario": "♐︎", "capricórnio": "♑︎", "capricornio": "♑︎",
+    "aquário": "♒︎", "aquario": "♒︎", "peixes": "♓︎",
+}
+
+ELEMENT_MAP = {
+    "Terra":  {"touro", "virgem", "capricornio", "capricórnio"},
+    "Ar":     {"gêmeos", "gemeos", "libra", "aquário", "aquario"},
+    "Fogo":   {"áries", "aries", "leão", "leao", "sagitário", "sagitario"},
+    "Água":   {"câncer", "cancer", "escorpião", "escorpiao", "peixes"},
+}
+
+ELEMENT_ICONS = {
+    "Terra": "🜃",
+    "Ar": "🜁",
+    "Fogo": "🜂",
+    "Água": "🜄",
+}
+
+IMC_FAIXAS = [
+    ("Magreza", 0.0, 18.5, "#7aa6f9"),
+    ("Normal", 18.5, 25.0, "#55c169"),
+    ("Sobrepeso", 25.0, 30.0, "#ffb347"),
+    ("Obesidade I", 30.0, 35.0, "#ff7f50"),
+    ("Obesidade II/III", 35.0, 60.0, "#e74c3c"),
+]
+
+
+def _strip_accents(s: str) -> str:
+    return "".join(
+        c for c in unicodedata.normalize("NFD", s or "") if unicodedata.category(c) != "Mn"
+    ).lower()
+
+
+def _imc_categoria_cor(imc: float) -> tuple[str, str]:
+    for nome, lo, hi, cor in IMC_FAIXAS:
+        if lo <= imc < hi:
+            return nome, cor
+    return "Indefinido", "#95a5a6"
+
+
+def _signo_symbol(signo: str) -> str:
+    return ZODIAC_SYMBOLS.get((signo or "").strip().lower(), "✦")
+
+
+def _signo_elemento(signo: str) -> str:
+    s = (signo or "").strip().lower()
+    s_norm = _strip_accents(s)
+    for elem, conj in ELEMENT_MAP.items():
+        if s in conj or s_norm in conj:
+            return elem
+    return "—"
+
+
+def _element_icon(elem: str) -> str:
+    return ELEMENT_ICONS.get(elem, "◆")
+
+
+def _dashboard_style() -> None:
+    st.markdown(
+        f"""
+        <style>
+        .card {{
+          background:#fff;border:1px solid #e6e6e6;border-radius:12px;
+          padding:14px;box-shadow:0 2px 10px rgba(0,0,0,0.04);
+        }}
+        .card-title {{
+          font-weight:700;font-size:0.95rem;color:#2c3e50;margin-bottom:8px;
+        }}
+        .square {{
+          aspect-ratio:1/1;display:flex;align-items:center;justify-content:center;
+          font-size:64px;font-weight:700;border-radius:16px;border:1px dashed #e5e7eb;
+          background:#fbfcfd;
+        }}
+        .square-element {{
+          aspect-ratio:1/1;display:flex;align-items:center;justify-content:center;
+          font-size:56px;font-weight:700;border-radius:16px;border:1px dashed #e5e7eb;
+          background:#fafbff;
+        }}
+        .small-muted {{ color:#718096;font-size:0.82rem;text-align:center;margin-top:6px;}}
+        .kpi {{font-size:26px;font-weight:700;margin:6px 0;}}
+        .sub {{color:{DASH_MUTED};font-size:13px;margin-top:2px;}}
+        .chips > span {{
+          display:inline-block;padding:6px 10px;margin:4px 6px 0 0;
+          background:#f4f6f8;border:1px solid #e6ebef;border-radius:10px;
+          font-size:0.85rem;color:#34495e;
+        }}
+        .two-col {{ display:grid;grid-template-columns:1fr 1fr;gap:12px; }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _plot_imc_horizontal(imc: float) -> tuple[go.Figure, str]:
+    faixa_max = 40.0
+    imc_clip = max(0.0, min(faixa_max, imc))
+    categoria, cor = _imc_categoria_cor(imc_clip)
+
+    fig = go.Figure()
+    fig.add_trace(
+        go.Bar(
+            x=[faixa_max],
+            y=["IMC"],
+            orientation="h",
+            marker=dict(color="#ecf0f1"),
+            hoverinfo="skip",
+            showlegend=False,
+            width=0.5,
+        )
+    )
+    fig.add_trace(
+        go.Bar(
+            x=[imc_clip],
+            y=["IMC"],
+            orientation="h",
+            marker=dict(color=cor),
+            hovertemplate=f"IMC: {imc:.1f}<extra>{categoria}</extra>",
+            showlegend=False,
+            width=0.5,
+        )
+    )
+    shapes = []
+    for _, lim, _, _ in IMC_FAIXAS[1:]:
+        shapes.append(
+            dict(
+                type="line",
+                x0=lim,
+                x1=lim,
+                y0=-0.5,
+                y1=0.5,
+                line=dict(color="#d9dde1", width=1, dash="dot"),
+            )
+        )
+    fig.update_layout(shapes=shapes)
+    fig.update_layout(
+        barmode="overlay",
+        height=140,
+        margin=dict(l=30, r=30, t=0, b=10),
+        xaxis=dict(range=[0, faixa_max], showgrid=False, zeroline=False, title=None),
+        yaxis=dict(showticklabels=False),
+    )
+    return fig, categoria
+
+
+def _plot_agua(consumido: float, recomendado: float) -> go.Figure:
+    fig = go.Figure()
+    fig.add_trace(
+        go.Bar(
+            x=[consumido, recomendado],
+            y=["Consumido", "Recomendado"],
+            orientation="h",
+            marker=dict(color=[PRIMARY, "#cbd5e1"]),
+            showlegend=False,
+            hovertemplate="%{y}: %{x:.1f} L<extra></extra>",
+            width=0.45,
+        )
+    )
+    fig.update_layout(
+        height=180,
+        margin=dict(l=30, r=30, t=0, b=10),
+        xaxis=dict(showgrid=False, zeroline=False, title="Litros"),
+        yaxis=dict(autorange="reversed"),
+    )
+    return fig
+
+
+def _build_perfil_text(payload: Dict[str, object]) -> str:
+    motiv = payload.get("motivacao")
+    estresse = payload.get("estresse")
+    energia = payload.get("energia_diaria")
+    partes = []
+    if motiv:
+        partes.append(f"motivação {int(_to_float(motiv, motiv))}/5")
+    if estresse:
+        partes.append(f"estresse {int(_to_float(estresse, estresse))}/5")
+    if energia:
+        partes.append(f"energia {str(energia).lower()}")
+    if partes:
+        return "Perfil com " + "; ".join(partes) + "."
+    return "Perfil em construção."
+
+
+def _build_estrategia_text(peso: float, recomendado: float, categoria: str) -> str:
+    partes = []
+    if categoria and categoria != "Indefinido":
+        partes.append(f"IMC na faixa {categoria.lower()}")
+    if recomendado:
+        partes.append(f"hidratação alvo ≈ {recomendado:.1f} L/dia")
+    if not partes:
+        return "Estratégia em construção com base nos próximos dados coletados."
+    return "; ".join(partes) + "."
+
+
+def _extract_bristol_tipo(texto: str | None, fallback: str = "") -> str:
+    if not texto:
+        return fallback or "—"
+    match = re.search(r"tipo\s*(\d)", str(texto), flags=re.IGNORECASE)
+    if match:
+        return f"Tipo {match.group(1)}"
+    return str(texto)
+
+
+def _extract_cor_urina(texto: str | None, fallback: str = "") -> str:
+    if not texto:
+        return fallback or "—"
+    base = str(texto).split("(")[0].strip()
+    return base or (fallback or "—")
+
+
+def _collect_comportamentos(payload: Dict[str, object]) -> list[str]:
+    itens: list[str] = []
+    for key in ("habitos_alimentares", "observacoes", "historico_saude"):
+        raw = payload.get(key)
+        if not raw:
+            continue
+        parts = [p.strip(" .\n") for p in re.split(r"[,;\n•]+", str(raw))]
+        itens.extend([p for p in parts if p])
+    return itens
 
 
 # =========================
@@ -502,14 +734,13 @@ def main() -> None:
             ai_summary = ai_pack.get("ai_summary", "Resumo indisponível (modo simulado).")
         except Exception as e:
             st.warning(f"Modo fallback automático: {e}")
-            peso = _to_float(st.session_state.data.get("peso"), 70)
-            altura = _to_float(st.session_state.data.get("altura"), 170)
-            altura_m = max(0.1, altura / 100.0)
-            bmi = round(peso / (altura_m ** 2), 1)
+            peso_fallback = _to_float(st.session_state.data.get("peso"), 70)
+            altura_fallback = _to_float(st.session_state.data.get("altura"), 170)
+            altura_m_fallback = max(0.1, altura_fallback / 100.0)
+            bmi = round(peso_fallback / (altura_m_fallback ** 2), 1)
             insights = {
                 "bmi": bmi,
                 "bmi_category": "Eutrofia" if 18.5 <= bmi < 25 else ("Baixo peso" if bmi < 18.5 else ("Sobrepeso" if bmi < 30 else "Obesidade")),
-                "recommended_water": round(max(1.5, peso * 0.035), 1),
                 "water_status": "OK",
                 "bristol": "Padrão dentro do esperado",
                 "urine": "Hidratado",
@@ -518,101 +749,169 @@ def main() -> None:
                 "sign_hint": "Use seu signo como inspiração, não como prescrição.",
                 "consumption": {
                     "water_liters": _to_float(st.session_state.data.get("consumo_agua"), 1.5),
-                    "recommended_liters": round(max(1.5, peso * 0.035), 1),
+                    "recommended_liters": round(max(1.5, peso_fallback * 0.035), 1),
                 },
             }
             ai_summary = "Resumo simulado (fallback hard)."
 
-        # 2) Cards (HTML/CSS leve)
-        card_css = """
-        <style>
-        .grid {display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:12px;margin-top:8px;}
-        .card {background:#fff;border:1px solid #e6e6e6;border-radius:12px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,0.04);}
-        .kpi {font-size:26px;font-weight:700;margin:6px 0;}
-        .sub {color:#6b7280;font-size:13px;margin-top:2px;}
-        .badge-ok{display:inline-block;padding:2px 8px;border-radius:999px;background:#e8f7ef;color:#127a46;font-size:12px}
-        .badge-warn{display:inline-block;padding:2px 8px;border-radius:999px;background:#fff5e6;color:#8a5200;font-size:12px}
-        </style>
-        """
-        st.markdown(card_css, unsafe_allow_html=True)
+        payload = st.session_state.data
+        peso = _to_float(payload.get("peso"), 0.0)
+        altura_cm = _to_float(payload.get("altura"), 0.0)
+        altura_m = round(altura_cm / 100.0, 2) if altura_cm else 0.0
+        imc = round(peso / (altura_m ** 2), 1) if peso and altura_m else 0.0
 
-        st.markdown('<div class="grid">', unsafe_allow_html=True)
+        imc_value = insights.get("bmi")
+        if not imc_value and imc:
+            imc_value = imc
+        if imc_value is None:
+            imc_value = 0.0
+        insights["bmi"] = _to_float(imc_value, 0.0)
+        categoria_base = insights.get("bmi_category") or _imc_categoria_cor(insights["bmi"])[0]
+        insights["bmi_category"] = categoria_base
 
-        def badge(text, ok=True):
-            cls = "badge-ok" if ok else "badge-warn"
-            return f'<span class="{cls}">{text}</span>'
+        consumo_info = insights.get("consumption") or {}
+        consumo_real = _to_float(consumo_info.get("water_liters"), _to_float(payload.get("consumo_agua"), 0.0))
+        recomendado = _to_float(
+            consumo_info.get("recommended_liters"),
+            round(max(1.5, peso * 0.035), 1) if peso else 2.0,
+        )
+        insights["consumption"] = {
+            "water_liters": consumo_real,
+            "recommended_liters": recomendado,
+        }
+        insights.setdefault("water_status", "OK" if recomendado and consumo_real >= recomendado else "Abaixo do ideal")
+        insights.setdefault("motivacao", int(_to_float(payload.get("motivacao"), 0)))
+        insights.setdefault("estresse", int(_to_float(payload.get("estresse"), 0)))
+        insights.setdefault("bristol", _extract_bristol_tipo(payload.get("tipo_fezes")))
+        insights.setdefault("urine", _extract_cor_urina(payload.get("cor_urina")))
+        insights.setdefault("sign_hint", "Use seu signo como inspiração de hábitos saudáveis.")
 
-        st.markdown(f'''
-        <div class="card">
-          <div>IMC</div>
-          <div class="kpi">{insights.get("bmi","--")}</div>
-          <div class="sub">{insights.get("bmi_category","")}</div>
-        </div>
-        ''', unsafe_allow_html=True)
+        signo = payload.get("signo") or "—"
+        elemento = _signo_elemento(signo)
+        elemento_icon = _element_icon(elemento)
+        perfil_text = _build_perfil_text(payload)
+        estrategia_text = _build_estrategia_text(peso, recomendado, categoria_base)
+        bristol_tipo = _extract_bristol_tipo(payload.get("tipo_fezes"), insights.get("bristol", ""))
+        cor_urina = _extract_cor_urina(payload.get("cor_urina"), insights.get("urine", ""))
+        comportamentos = _collect_comportamentos(payload)
 
-        st.markdown(f'''
-        <div class="card">
-          <div>Hidratação</div>
-          <div class="kpi">{insights["consumption"]["water_liters"]} / {insights["consumption"]["recommended_liters"]} L</div>
-          <div class="sub">{badge(insights.get("water_status","OK")=="OK" and "Meta atingida" or "Abaixo do ideal",
-                                   ok=insights.get("water_status","OK")=="OK")}</div>
-        </div>
-        ''', unsafe_allow_html=True)
+        _dashboard_style()
 
-        st.markdown(f'''
-        <div class="card">
-          <div>Digestão</div>
-          <div class="kpi">Bristol</div>
-          <div class="sub">{insights.get("bristol","")}</div>
-        </div>
-        ''', unsafe_allow_html=True)
+        col_signo, col_elem, col_perfil, col_estrat = st.columns([1, 1, 2, 2], gap="medium")
 
-        st.markdown(f'''
-        <div class="card">
-          <div>Urina</div>
-          <div class="kpi">Cor</div>
-          <div class="sub">{insights.get("urine","")}</div>
-        </div>
-        ''', unsafe_allow_html=True)
+        with col_signo:
+            st.markdown('<div class="card"><div class="card-title">Signo</div>', unsafe_allow_html=True)
+            st.markdown(
+                f'<div class="square">{html.escape(_signo_symbol(signo))}</div>',
+                unsafe_allow_html=True,
+            )
+            st.markdown(
+                f'<div class="small-muted">{html.escape(str(signo))}</div></div>',
+                unsafe_allow_html=True,
+            )
 
-        st.markdown(f'''
-        <div class="card">
-          <div>Comportamento</div>
-          <div class="kpi">Motivação {insights.get("motivacao",0)}/5</div>
-          <div class="sub">Estresse {insights.get("estresse",0)}/5</div>
-        </div>
-        ''', unsafe_allow_html=True)
+        with col_elem:
+            st.markdown('<div class="card"><div class="card-title">Elemento</div>', unsafe_allow_html=True)
+            st.markdown(
+                f'<div class="square-element">{html.escape(elemento_icon)}</div>',
+                unsafe_allow_html=True,
+            )
+            st.markdown(
+                f'<div class="small-muted">{html.escape(elemento)}</div></div>',
+                unsafe_allow_html=True,
+            )
 
-        st.markdown(f'''
-        <div class="card">
-          <div>Insight do signo</div>
-          <div class="kpi">🜚</div>
-          <div class="sub">{insights.get("sign_hint","")}</div>
-        </div>
-        ''', unsafe_allow_html=True)
+        with col_perfil:
+            st.markdown(
+                f'''
+                <div class="card">
+                  <div class="card-title">Perfil da Pessoa</div>
+                  <div class="kpi" style="font-size:18px">{html.escape(perfil_text)}</div>
+                </div>
+                ''',
+                unsafe_allow_html=True,
+            )
 
+        with col_estrat:
+            st.markdown(
+                f'''
+                <div class="card">
+                  <div class="card-title">Estratégia Nutricional</div>
+                  <div class="kpi" style="font-size:18px">{html.escape(estrategia_text)}</div>
+                </div>
+                ''',
+                unsafe_allow_html=True,
+            )
+
+        st.markdown('<div class="two-col">', unsafe_allow_html=True)
+        st.markdown(
+            f'''
+            <div class="card">
+              <div class="card-title">Bristol (fezes)</div>
+              <div class="kpi" style="font-size:18px">Bristol</div>
+              <div class="sub">{html.escape(str(bristol_tipo))}</div>
+            </div>
+            ''',
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            f'''
+            <div class="card">
+              <div class="card-title">Cor da urina</div>
+              <div class="kpi" style="font-size:18px">Cor</div>
+              <div class="sub">{html.escape(str(cor_urina))}</div>
+            </div>
+            ''',
+            unsafe_allow_html=True,
+        )
         st.markdown('</div>', unsafe_allow_html=True)
 
-        # 3) Gráficos
-        col1, col2 = st.columns(2)
-        with col1:
-            fig = plt.figure()
-            plt.title("Consumo de água (L)")
-            vals = [insights["consumption"]["water_liters"], insights["consumption"]["recommended_liters"]]
-            plt.bar(["Consumido", "Recomendado"], vals)
-            st.pyplot(fig, clear_figure=True)
-        with col2:
-            fig2 = plt.figure()
-            plt.title("IMC")
-            plt.bar(["IMC"], [insights.get("bmi", 0)])
-            plt.axhline(18.5, linestyle="--"); plt.axhline(25, linestyle="--")
-            st.pyplot(fig2, clear_figure=True)
+        colA, colB = st.columns(2, gap="medium")
+        with colA:
+            fig_imc, categoria_imc = _plot_imc_horizontal(insights["bmi"] or 0.0)
+            has_imc = insights["bmi"] > 0
+            categoria_display = categoria_imc if has_imc else "Indisponível"
+            st.markdown('<div class="card"><div class="card-title">IMC</div>', unsafe_allow_html=True)
+            st.plotly_chart(fig_imc, use_container_width=True, config={"displayModeBar": False})
+            imc_text = f"{insights['bmi']:.1f}" if has_imc else "--"
+            peso_text = f"{peso:.1f} kg" if peso else "--"
+            altura_text = f"{altura_m:.2f} m" if altura_m else "--"
+            st.markdown(
+                f'<div class="sub"><b>Categoria:</b> {html.escape(categoria_display)} &nbsp; '
+                f'<b>IMC:</b> {imc_text} &nbsp; '
+                f'<b>Peso:</b> {peso_text} &nbsp; '
+                f'<b>Altura:</b> {altura_text}</div></div>',
+                unsafe_allow_html=True,
+            )
 
-        # 4) Resumo textual
+        with colB:
+            fig_agua = _plot_agua(consumo_real, recomendado)
+            st.markdown('<div class="card"><div class="card-title">Hidratação</div>', unsafe_allow_html=True)
+            st.plotly_chart(fig_agua, use_container_width=True, config={"displayModeBar": False})
+            ok = recomendado and consumo_real >= recomendado
+            badge = (
+                '<span style="background:#e8f7ef;color:#127a46;padding:2px 8px;border-radius:999px;font-size:12px">Meta atingida</span>'
+                if ok
+                else '<span style="background:#fff5e6;color:#8a5200;padding:2px 8px;border-radius:999px;font-size:12px">Abaixo do ideal</span>'
+            )
+            st.markdown(f'<div class="sub">{badge}</div></div>', unsafe_allow_html=True)
+
+        chips = "".join([f"<span>{html.escape(x)}</span>" for x in comportamentos]) or '<span style="color:#718096;">Sem itens cadastrados.</span>'
+        st.markdown(
+            f"""
+            <div class="card">
+              <div class="card-title">Comportamento</div>
+              <div class="card" style="background:#fbfcfd;border:1px dashed #e6ebef;">
+                <div class="chips">{chips}</div>
+              </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
         with st.expander("Resumo dos insights"):
             st.write(ai_summary)
 
-        # 5) Exportações (PDF/Imagem)
         def build_insights_pdf_bytes(ins):
             try:
                 from reportlab.lib.pagesizes import A4
@@ -620,20 +919,29 @@ def main() -> None:
                 from reportlab.lib.units import cm
                 buf = io.BytesIO()
                 c = canvas.Canvas(buf, pagesize=A4)
-                y = 28*cm
-                c.setFont("Helvetica-Bold", 14); c.drawString(2*cm, y, "NutriSigno — Painel de Insights"); y -= 1*cm
+                y = 28 * cm
+                c.setFont("Helvetica-Bold", 14)
+                c.drawString(2 * cm, y, "NutriSigno — Painel de Insights")
+                y -= 1 * cm
                 c.setFont("Helvetica", 10)
                 for k, v in [
                     ("IMC", f"{ins['bmi']} ({ins['bmi_category']})"),
-                    ("Hidratação", f"{ins['consumption']['water_liters']} / {ins['consumption']['recommended_liters']} L"),
+                    (
+                        "Hidratação",
+                        f"{ins['consumption']['water_liters']} / {ins['consumption']['recommended_liters']} L",
+                    ),
                     ("Bristol", ins["bristol"]),
                     ("Urina", ins["urine"]),
                     ("Motivação/Estresse", f"{ins['motivacao']}/5 · {ins['estresse']}/5"),
                     ("Insight do signo", ins["sign_hint"]),
                 ]:
-                    c.drawString(2*cm, y, f"{k}: {v}"); y -= 0.8*cm
-                    if y < 2*cm: c.showPage(); y = 28*cm
-                c.save(); buf.seek(0)
+                    c.drawString(2 * cm, y, f"{k}: {v}")
+                    y -= 0.8 * cm
+                    if y < 2 * cm:
+                        c.showPage()
+                        y = 28 * cm
+                c.save()
+                buf.seek(0)
                 return buf.getvalue()
             except Exception:
                 return b"%PDF-1.4\n% fallback vazio"
@@ -648,17 +956,28 @@ def main() -> None:
                 f"Motivação/Estresse: {ins['motivacao']}/5 · {ins['estresse']}/5\n"
                 f"Signo: {ins.get('sign_hint','')}\n#NutriSigno"
             )
-            plt.axis("off"); plt.text(0.02, 0.98, text, va="top", ha="left", wrap=True)
-            buf = io.BytesIO(); fig.savefig(buf, format="png", bbox_inches="tight"); plt.close(fig)
+            plt.axis("off")
+            plt.text(0.02, 0.98, text, va="top", ha="left", wrap=True)
+            buf = io.BytesIO()
+            fig.savefig(buf, format="png", bbox_inches="tight")
+            plt.close(fig)
             return buf.getvalue()
 
         c1, c2, c3 = st.columns(3)
         with c1:
-            st.download_button("Exportar PDF", data=build_insights_pdf_bytes(insights),
-                               file_name="insights.pdf", mime="application/pdf")
+            st.download_button(
+                "Exportar PDF",
+                data=build_insights_pdf_bytes(insights),
+                file_name="insights.pdf",
+                mime="application/pdf",
+            )
         with c2:
-            st.download_button("Baixar imagem", data=build_share_png_bytes(insights),
-                               file_name="insights.png", mime="image/png")
+            st.download_button(
+                "Baixar imagem",
+                data=build_share_png_bytes(insights),
+                file_name="insights.png",
+                mime="image/png",
+            )
         with c3:
             if st.button("Gerar plano nutricional e prosseguir para pagamento"):
                 st.session_state.step += 1
