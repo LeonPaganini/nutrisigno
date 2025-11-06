@@ -21,6 +21,7 @@ import re
 # Módulos internos do projeto
 from modules import openai_utils, pdf_generator, email_utils
 from modules import repo  # <- PostgreSQL (SQLAlchemy)
+from modules.app_bootstrap import ensure_bootstrap
 
 # Quando SIMULATE=1 (ou chaves faltarem), serviços externos são simulados
 SIMULATE: bool = os.getenv("SIMULATE", "0") == "1"
@@ -115,6 +116,16 @@ def initialize_session() -> None:
 def next_step() -> None:
     """Incrementa o contador de etapas da sessão."""
     st.session_state.step += 1
+
+
+def _ensure_bootstrap_ready() -> tuple[bool, str]:
+    ok = st.session_state.get("_bootstrap_ok")
+    msg = st.session_state.get("_bootstrap_msg")
+    if ok is None:
+        ok, msg = ensure_bootstrap()
+        st.session_state["_bootstrap_ok"] = ok
+        st.session_state["_bootstrap_msg"] = msg or ""
+    return bool(ok), (msg or "")
 
 
 # =========================
@@ -442,11 +453,22 @@ def _collect_comportamentos(payload: Dict[str, object]) -> list[str]:
 # =========================
 def main() -> None:
     """Renderiza o formulário multipage do NutriSigno."""
+    ok, msg = _ensure_bootstrap_ready()
+    if not ok:
+        st.error(
+            "Não foi possível inicializar os recursos da aplicação. Tente novamente mais tarde."
+        )
+        if msg:
+            st.caption(msg)
+        return
+
     st.title("Formulário")
     st.write(
         "Bem-vindo ao NutriSigno! Preencha as etapas abaixo para receber um plano "
         "alimentar personalizado, combinando ciência e astrologia."
     )
+    if msg:
+        st.caption(msg)
     initialize_session()
 
     # Reabrir sessões antigas via parâmetro ?id=<pac_id> (PostgreSQL)
