@@ -10,6 +10,7 @@ import html
 import unicodedata
 from datetime import date, time, datetime
 from typing import Dict
+import logging
 
 from PIL import Image
 import streamlit as st
@@ -25,6 +26,8 @@ from modules.app_bootstrap import ensure_bootstrap
 
 # Quando SIMULATE=1 (ou chaves faltarem), serviços externos são simulados
 SIMULATE: bool = os.getenv("SIMULATE", "0") == "1"
+
+log = logging.getLogger(__name__)
 
 # Caminhos de imagens ilustrativas (se não existirem, o app segue em fallback)
 PATH_BRISTOL = "assets/escala_bistrol.jpeg"
@@ -731,6 +734,44 @@ def main() -> None:
     elif st.session_state.step == 6:
         st.header("6. Painel de insights")
 
+        payload = st.session_state.data
+
+        try:
+            phone_norm = repo.normalize_phone(payload.get("telefone", ""))
+            dob_iso = repo.parse_dob_to_date(payload.get("data_nascimento", "")).isoformat()
+        except Exception as e:
+            log.exception("Formulario persist normalize failed")
+            st.error(f"Erro ao preparar os dados do cadastro: {e}")
+            return
+
+        try:
+            pac_id = repo.upsert_patient_payload(
+                pac_id=st.session_state.get("pac_id"),
+                respostas=payload,
+                plano=st.session_state.get("plan") or {},
+                plano_compacto=st.session_state.get("plano_compacto") or {},
+                macros=st.session_state.get("macros") or {},
+                name=payload.get("nome"),
+                email=payload.get("email"),
+            )
+            st.session_state.pac_id = pac_id
+            sanity = repo.get_by_pac_id(pac_id)
+            if not sanity:
+                log.error("Formulario persist sanity check failed pac_id=%s", pac_id)
+                st.error("Não foi possível validar seu cadastro após o salvamento. Tente novamente.")
+                return
+            log.info(
+                "Formulario persist ok: pac_id=%s phone_norm=%s dob=%s",
+                pac_id,
+                phone_norm,
+                dob_iso,
+            )
+            log.info("Formulario persist read ok pac_id=%s", pac_id)
+        except Exception as e:
+            log.exception("Formulario persist failed")
+            st.error(f"Erro ao salvar os dados antes do painel: {e}")
+            return
+
         # 1) Obter insights (com fallback hard)
         try:
             ai_pack = openai_utils.generate_insights(st.session_state.data)
@@ -758,7 +799,6 @@ def main() -> None:
             }
             ai_summary = "Resumo simulado (fallback hard)."
 
-        payload = st.session_state.data
         peso = _to_float(payload.get("peso"), 0.0)
         altura_cm = _to_float(payload.get("altura"), 0.0)
         altura_m = round(altura_cm / 100.0, 2) if altura_cm else 0.0
@@ -1014,10 +1054,12 @@ def main() -> None:
                     macros = openai_utils.calcular_macros(st.session_state.plan)
                 except Exception:
                     macros = {}
+                st.session_state.macros = macros
                 try:
                     plano_compacto = openai_utils.resumir_plano(st.session_state.plan)
                 except Exception:
                     plano_compacto = {}
+                st.session_state.plano_compacto = plano_compacto
 
                 # 3) Persiste tudo no PostgreSQL (cria/atualiza e obtém pac_id)
                 try:
