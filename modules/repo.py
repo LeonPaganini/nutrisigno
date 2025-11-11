@@ -4,19 +4,23 @@ from __future__ import annotations
 import re
 import uuid
 from datetime import datetime, date
+import logging
 from typing import Optional, Dict, Any
 
-from sqlalchemy import Text, Date, TIMESTAMP, func, text
+from sqlalchemy import Text, Date, TIMESTAMP, func, text, select, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID as PGUUID, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.types import JSON as SQLJSON
+from sqlalchemy.exc import IntegrityError
 
 from dateutil import parser as dateparser
 
-from .db import Base, session_scope, SessionLocal, engine
+from .db import Base, session_scope, SessionLocal, engine, is_postgres
 
 UUID_TYPE = PGUUID(as_uuid=False) if engine.dialect.name != "sqlite" else Text
 JSON_TYPE = JSONB if engine.dialect.name != "sqlite" else SQLJSON
+
+log = logging.getLogger(__name__)
 
 
 # -----------------------------------------------------------------------------
@@ -24,6 +28,9 @@ JSON_TYPE = JSONB if engine.dialect.name != "sqlite" else SQLJSON
 # -----------------------------------------------------------------------------
 class Patient(Base):
     __tablename__ = "patients"
+    __table_args__ = (
+        UniqueConstraint("phone_norm", "dob", name="uq_patients_phone_dob"),
+    )
 
     pac_id: Mapped[str] = mapped_column(
         UUID_TYPE,
@@ -108,9 +115,21 @@ def upsert_patient_payload(
 
     dob = parse_dob_to_date(respostas.get("data_nascimento", ""))
 
+    lookup = "pac_id" if pac_id else "phone_dob"
+
     with session_scope() as s:
         obj: Patient | None = s.get(Patient, pac_id) if pac_id else None
 
+        if obj is None:
+            stmt = select(Patient).where(
+                Patient.phone_norm == phone,
+                Patient.dob == dob,
+            ).limit(1)
+            obj = s.execute(stmt).scalar_one_or_none()
+            if obj:
+                lookup = "phone_dob"
+
+        created = obj is None
         if obj is None:
             obj = Patient(
                 phone_norm=phone,
@@ -124,18 +143,39 @@ def upsert_patient_payload(
                 email=email,
             )
             s.add(obj)
-            s.flush()  # gera pac_id
-        else:
-            obj.phone_norm = phone
-            obj.dob = dob
-            obj.respostas = respostas
-            obj.plano = plano
-            obj.plano_compacto = plano_compacto
-            obj.macros = macros
-            if name is not None:
-                obj.name = name
-            if email is not None:
-                obj.email = email
+            try:
+                s.flush()  # garante pac_id e valida unique
+            except IntegrityError:
+                s.rollback()
+                stmt = select(Patient).where(
+                    Patient.phone_norm == phone,
+                    Patient.dob == dob,
+                ).limit(1)
+                obj = s.execute(stmt).scalar_one_or_none()
+                if obj is None:
+                    raise
+                created = False
+
+        # Atualiza campos sempre
+        obj.phone_norm = phone
+        obj.dob = dob
+        obj.respostas = respostas
+        obj.plano = plano
+        obj.plano_compacto = plano_compacto
+        obj.macros = macros
+        if name is not None:
+            obj.name = name
+        if email is not None:
+            obj.email = email
+
+        log.info(
+            "Repo upsert ok: pac_id=%s lookup=%s phone_norm=%s dob=%s created=%s",
+            obj.pac_id,
+            lookup,
+            phone,
+            obj.dob.isoformat(),
+            created,
+        )
 
         return obj.pac_id
 
@@ -149,31 +189,54 @@ def get_by_phone_dob(telefone: str, dob_str: str):
     Aceita DD/MM/AAAA e YYYY-MM-DD.
     Compatível com registros antigos e novos no JSON.
     """
-    telefone = normalize_phone(telefone)
+    telefone_norm = normalize_phone(telefone)
     dob = parse_dob_to_date(dob_str)
 
-    sql = text("""
-        SELECT pac_id
-        FROM patients
-        WHERE (
-                phone_norm = :telefone
-             OR REPLACE(REPLACE(respostas->>'telefone', '-', ''), ' ', '') = :telefone
-              )
-          AND (
-                dob = :dob
-             OR COALESCE(
-                    to_date(respostas->>'data_nascimento', 'DD/MM/YYYY'),
-                    to_date(respostas->>'data_nascimento', 'YYYY-MM-DD')
-                ) = :dob
-              )
-        LIMIT 1
-    """)
-
     with SessionLocal() as s:
-        row = s.execute(sql, {"telefone": telefone, "dob": dob}).mappings().first()
-        if not row:
-            return None
-    return get_by_pac_id(row["pac_id"])
+        stmt = select(Patient.pac_id).where(
+            Patient.phone_norm == telefone_norm,
+            Patient.dob == dob,
+        ).limit(1)
+        pac_id = s.execute(stmt).scalar_one_or_none()
+
+        if pac_id:
+            log.info(
+                "Repo get_by_phone_dob ok: pac_id=%s via_columns phone_norm=%s dob=%s",
+                pac_id,
+                telefone_norm,
+                dob.isoformat(),
+            )
+            return get_by_pac_id(pac_id)
+
+        if is_postgres():
+            sql = text("""
+                SELECT pac_id
+                FROM patients
+                WHERE REPLACE(REPLACE(respostas->>'telefone', '-', ''), ' ', '') = :telefone
+                  AND COALESCE(
+                        to_date(respostas->>'data_nascimento', 'DD/MM/YYYY'),
+                        to_date(respostas->>'data_nascimento', 'YYYY-MM-DD')
+                  ) = :dob
+                LIMIT 1
+            """)
+            row = s.execute(sql, {"telefone": telefone_norm, "dob": dob}).mappings().first()
+            if row:
+                pac_id = row["pac_id"]
+                log.info(
+                    "Repo get_by_phone_dob ok: pac_id=%s via_json phone_norm=%s dob=%s",
+                    pac_id,
+                    telefone_norm,
+                    dob.isoformat(),
+                )
+                return get_by_pac_id(pac_id)
+
+        log.info(
+            "Repo get_by_phone_dob miss: phone_norm=%s dob=%s dialect=%s",
+            telefone_norm,
+            dob.isoformat(),
+            engine.dialect.name,
+        )
+        return None
 
 
 def get_by_pac_id(pac_id: str) -> Optional[Dict[str, Any]]:

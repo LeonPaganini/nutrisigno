@@ -25,9 +25,9 @@ if DATABASE_URL == DEFAULT_SQLITE_URL:
 
 # Log seguro (sem expor credenciais)
 log.info(
-    "DB init: dialect=%s url=%s",
+    "DB init: dialect_hint=%s url_hint=%s",
     dialect,
-    "sqlite:///<projeto>/local.db" if dialect == "sqlite" else "postgresql://***"
+    "sqlite:///<projeto>/local.db" if dialect == "sqlite" else "postgresql://***",
 )
 
 # -----------------------------------------------------------------------------
@@ -50,6 +50,13 @@ else:
         future=True,
         pool_pre_ping=True,
     )
+
+log.info(
+    "DB engine ready: dialect=%s pool=%s target=%s",
+    engine.dialect.name,
+    type(engine.pool).__name__,
+    DEFAULT_SQLITE_PATH if engine.dialect.name == "sqlite" else "postgresql://***",
+)
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
@@ -89,4 +96,7 @@ def session_scope():
 def init_models():
     import modules.repo  # garante que modelos sejam importados
     Base.metadata.create_all(bind=engine)
-    log.info("DB models initialized on %s", "SQLite" if is_sqlite() else "PostgreSQL")
+    log.info(
+        "DB models initialized on %s",
+        "SQLite" if is_sqlite() else engine.dialect.name,
+    )
