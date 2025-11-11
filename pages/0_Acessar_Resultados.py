@@ -1,67 +1,97 @@
 # pages/0_Acessar_Resultados.py
 from __future__ import annotations
+
+import re
+from datetime import datetime
+import logging
 import streamlit as st
-from modules import repo, app_bootstrap, dashboard_utils
 
-PAGE_TITLE = "Acessar Resultados"
+from modules.repo import get_by_phone_dob, list_recent_patients
+from modules.db import engine
 
-def normalizar_telefone(tel: str) -> str:
-    return ''.join(ch for ch in tel if ch.isdigit())
+log = logging.getLogger(__name__)
 
-def _guard_logged() -> bool:
-    return bool(st.session_state.get("pac_id"))
+# ---------------------------------------------------------------------
+# Helpers inline (sem criar módulos extras)
+# ---------------------------------------------------------------------
+def _canon_phone(s: str) -> str:
+    # mantém apenas dígitos e remove zeros à esquerda
+    return re.sub(r"\D+", "", (s or "")).lstrip("0")
 
-def _logout_button() -> None:
-    if st.button("Sair", use_container_width=True):
-        for k in ("pac_id", "paciente_data"):
-            st.session_state.pop(k, None)
-        st.success("Sessão encerrada.")
-
-def render_dashboard(paciente_data: dict) -> None:
-    st.success("✅ Acesso autorizado. Seus resultados estão abaixo.")
-    try:
-        dashboard_utils.render(paciente_data)
-    except Exception as e:
-        st.error(f"Não foi possível renderizar o painel: {e}")
-
-def main() -> None:
-    app_bootstrap.ensure_bootstrap()
-    st.set_page_config(page_title=PAGE_TITLE, page_icon="📊", layout="wide")
-    st.title("📊 Acessar Resultados")
-    st.caption("Insira seu telefone e a data de nascimento no formato DD/MM/AAAA.")
-
-    # pages/0_Acessar_Resultados.py
-# ...
-    with st.form("form_login_leve"):
-        telefone = st.text_input("Telefone (com DDD; pode ter espaços/traços)")
-        dob = st.text_input("Data de nascimento (DD/MM/AAAA)")
-        submit = st.form_submit_button("Acessar", use_container_width=True)
-    
-    if submit:
-        if not telefone or not dob:
-            st.error("Por favor preencha os dois campos.")
-            st.stop()
-    
+def _canon_dob_to_br(s: str) -> str:
+    """
+    Aceita DD/MM/AAAA ou YYYY-MM-DD e padroniza para DD/MM/AAAA.
+    Se não bater com os formatos esperados, retorna a string original
+    para o repo tratar (e falhar de forma clara, se necessário).
+    """
+    s = (s or "").strip()
+    for fmt_in in ("%d/%m/%Y", "%Y-%m-%d"):
         try:
-            data = repo.get_by_phone_dob(repo.normalize_phone(telefone), dob)
-            if not data:
-                st.error("Não encontramos nenhum cadastro com esses dados.")
-                st.stop()
-            st.session_state["pac_id"] = data["pac_id"]
-            st.session_state["paciente_data"] = data
-            st.experimental_rerun()
-        except ValueError as ve:
-            st.error(str(ve))
+            return datetime.strptime(s, fmt_in).strftime("%d/%m/%Y")
+        except ValueError:
+            continue
+    return s
+
+# ---------------------------------------------------------------------
+# UI
+# ---------------------------------------------------------------------
+st.set_page_config(page_title="Acessar resultados", page_icon="🔎", layout="centered")
+
+st.title("Acessar resultados")
+st.caption("Digite seu telefone (com DDD) e data de nascimento para localizar seu cadastro.")
+
+with st.form("form_acesso"):
+    col1, col2 = st.columns(2)
+    with col1:
+        telefone_input = st.text_input("Telefone (com DDD)", placeholder="(11) 9 8765-4321")
+    with col2:
+        data_nasc_input = st.text_input("Data de nascimento", placeholder="DD/MM/AAAA ou 1990-05-21")
+
+    submitted = st.form_submit_button("Acessar")
+
+if submitted:
+    telefone_norm = _canon_phone(telefone_input)
+    dob_br = _canon_dob_to_br(data_nasc_input)
+
+    log.info(
+        "AcessarResultados: dialect=%s phone_norm=%s dob_norm=%s",
+        engine.dialect.name, telefone_norm, dob_br
+    )
+
+    if not telefone_norm or not dob_br:
+        st.error("Informe telefone com DDD e data de nascimento válidos.")
+    else:
+        st.info(f"Buscando cadastro para **{telefone_norm}** | **{dob_br}**...")
+        try:
+            user = get_by_phone_dob(telefone_norm, dob_br)
         except Exception as e:
-            st.error(f"Ocorreu um erro: {e}")
+            st.error(f"Erro ao buscar cadastro: {e}")
+            user = None
 
-    if _guard_logged():
-        _logout_button()
-        payload = st.session_state.get("paciente_data") or repo.get_by_pac_id(st.session_state["pac_id"])
-        if payload:
-            render_dashboard(payload)
+        if user:
+            st.success("Cadastro encontrado.")
+            # Exibição mínima para validação — ajuste conforme seu layout do Dashboard
+            with st.expander("Dados brutos do cadastro (debug)"):
+                st.json(user, expanded=False)
+
+            # -----------------------------------------------------------------
+            # AQUI você pode chamar seu renderer de cards/dash, ex.:
+            # render_dashboard(user)
+            # -----------------------------------------------------------------
+
         else:
-            st.warning("Não foi possível carregar seus dados agora. Tente novamente em instantes.")
+            st.warning("Não encontramos nenhum cadastro com esses dados.")
 
-if __name__ == "__main__":
-    main()
+# ---------------------------------------------------------------------
+# Painel de debug — últimos cadastros
+# ---------------------------------------------------------------------
+with st.expander("Debug — últimos cadastros na base atual"):
+    st.caption(f"Dialeto ativo: {engine.dialect.name}")
+    try:
+        rows = list_recent_patients(10)
+        if rows:
+            st.dataframe(rows, use_container_width=True)
+        else:
+            st.info("Sem registros recentes nesta base.")
+    except Exception as e:
+        st.error(f"Erro ao listar cadastros: {e}")
