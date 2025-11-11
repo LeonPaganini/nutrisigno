@@ -5,7 +5,9 @@ import re
 import uuid
 from datetime import datetime, date
 import logging
+from decimal import Decimal
 from typing import Optional, Dict, Any
+from collections.abc import Mapping
 
 from sqlalchemy import Text, Date, TIMESTAMP, func, text, select, UniqueConstraint
 from sqlalchemy.dialects.postgresql import UUID as PGUUID, JSONB
@@ -14,6 +16,8 @@ from sqlalchemy.types import JSON as SQLJSON
 from sqlalchemy.exc import IntegrityError
 
 from dateutil import parser as dateparser
+
+import numpy as np
 
 from .db import Base, session_scope, SessionLocal, engine, is_postgres
 
@@ -69,6 +73,35 @@ def normalize_phone(phone_raw: str) -> str:
     """Mantém apenas dígitos (compatível com DDD + 9 dígitos no BR)."""
     return re.sub(r"\D", "", phone_raw or "")
 
+
+def _json_safe(obj: Any):
+    """Converte valores para tipos compatíveis com JSON."""
+    if obj is None or isinstance(obj, (str, int, float, bool)):
+        return obj
+
+    if isinstance(obj, (date, datetime)):
+        return obj.isoformat()
+
+    if isinstance(obj, uuid.UUID):
+        return str(obj)
+
+    if isinstance(obj, Decimal):
+        return float(obj)
+
+    if isinstance(obj, np.ndarray):
+        return [_json_safe(item) for item in obj.tolist()]
+
+    if isinstance(obj, np.generic):
+        return _json_safe(obj.item())
+
+    if isinstance(obj, Mapping):
+        return {str(key): _json_safe(value) for key, value in obj.items()}
+
+    if isinstance(obj, (list, tuple, set)):
+        return [_json_safe(item) for item in obj]
+
+    return str(obj)
+
 def parse_dob_to_date(dob_input: str) -> date:
     """
     Aceita formatos comuns (DD/MM/AAAA, AAAA-MM-DD, DD-MM-AAAA etc).
@@ -117,6 +150,11 @@ def upsert_patient_payload(
 
     lookup = "pac_id" if pac_id else "phone_dob"
 
+    respostas_s = _json_safe(respostas or {})
+    plano_s = _json_safe(plano or {})
+    plano_compacto_s = _json_safe(plano_compacto or {})
+    macros_s = _json_safe(macros or {})
+
     with session_scope() as s:
         obj: Patient | None = s.get(Patient, pac_id) if pac_id else None
 
@@ -134,10 +172,10 @@ def upsert_patient_payload(
             obj = Patient(
                 phone_norm=phone,
                 dob=dob,
-                respostas=respostas,
-                plano=plano,
-                plano_compacto=plano_compacto,
-                macros=macros,
+                respostas=respostas_s,
+                plano=plano_s,
+                plano_compacto=plano_compacto_s,
+                macros=macros_s,
                 status="pendente_validacao",
                 name=name,
                 email=email,
@@ -159,10 +197,10 @@ def upsert_patient_payload(
         # Atualiza campos sempre
         obj.phone_norm = phone
         obj.dob = dob
-        obj.respostas = respostas
-        obj.plano = plano
-        obj.plano_compacto = plano_compacto
-        obj.macros = macros
+        obj.respostas = respostas_s
+        obj.plano = plano_s
+        obj.plano_compacto = plano_compacto_s
+        obj.macros = macros_s
         if name is not None:
             obj.name = name
         if email is not None:
@@ -175,6 +213,14 @@ def upsert_patient_payload(
             phone,
             obj.dob.isoformat(),
             created,
+        )
+
+        log.info(
+            "Repo upsert %s: pac_id=%s phone_norm=%s dob=%s",
+            "created" if created else "updated",
+            obj.pac_id,
+            phone,
+            dob.isoformat(),
         )
 
         return obj.pac_id
@@ -263,12 +309,26 @@ def get_by_pac_id(pac_id: str) -> Optional[Dict[str, Any]]:
 # -----------------------------------------------------------------------------
 def list_recent_patients(limit: int = 10):
     """Lista os últimos pacientes cadastrados (para debug)."""
-    sql = text("""
-        SELECT pac_id, name, phone_norm, dob, created_at
-        FROM patients
-        ORDER BY created_at DESC
-        LIMIT :lim
-    """)
+    if is_postgres():
+        sql = text("""
+            SELECT pac_id::text AS pac_id, name, phone_norm, dob, created_at
+            FROM patients
+            ORDER BY created_at DESC
+            LIMIT :lim
+        """)
+    else:
+        sql = text("""
+            SELECT pac_id, name, phone_norm, dob, created_at
+            FROM patients
+            ORDER BY created_at DESC
+            LIMIT :lim
+        """)
     with SessionLocal() as s:
         rows = s.execute(sql, {"lim": limit}).mappings().all()
-        return [dict(r) for r in rows]
+        result = []
+        for r in rows:
+            row_dict = dict(r)
+            if "pac_id" in row_dict and row_dict["pac_id"] is not None:
+                row_dict["pac_id"] = str(row_dict["pac_id"])
+            result.append(row_dict)
+        return result
