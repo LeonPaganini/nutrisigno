@@ -1,93 +1,165 @@
-# NutriSigno – Aplicativo de Plano Alimentar Astrológico
+# NutriSigno — Fluxo Oficial (Nov/2025)
 
-O **NutriSigno** é um aplicativo desenvolvido em Python e Streamlit com foco em
-dispositivos móveis. Ele combina ciência nutricional com elementos de
-astrologia para gerar planos alimentares personalizados de forma ética e
-responsável. O projeto utiliza Firebase para armazenamento de dados,
-OpenAI para geração de conteúdo inteligente e ReportLab/Matplotlib para
-elaboração de relatórios em PDF.
+Este documento consolida o **fluxo funcional oficial** do NutriSigno e serve como referência rápida para implementação, QA e onboarding.
 
-## Recursos principais
+---
 
-* **Interface responsiva:** Construída com Streamlit, o layout foi pensado
-  para uso em navegadores de dispositivos móveis. Um menu lateral permite
-  navegar pelas seções do formulário sem sair da página.
-* **Formulário em etapas:** O usuário fornece dados pessoais, de saúde,
-  comportamentais e astrológicos. Todos os campos são obrigatórios e
-  verificados antes de prosseguir para o pagamento.
-* **Geração de plano personalizado:** Utiliza a API da OpenAI para combinar
-  informações do usuário com perfis astrológicos e oferecer um plano
-  alimentar sob medida. A resposta da IA é formatada em JSON para fácil
-  manipulação no código.
-* **Relatórios em PDF:** Após o pagamento, um relatório completo é
-  gerado com ReportLab e Matplotlib, incluindo tabelas com o plano
-  alimentar, gráficos nutricionais e insights personalizados.
-* **Armazenamento em Firebase:** Os dados são gravados no Firebase
-  Realtime Database somente ao final do processo, utilizando um ID único
-  gerado no início da jornada. O módulo `firebase_utils.py` trata da
-  inicialização segura da conexão.
-* **Envio por e‑mail:** O relatório e o plano alimentar são enviados
-  automaticamente para o endereço de e‑mail informado pelo usuário. O
-  módulo `email_utils.py` utiliza SMTP configurável via variáveis de
-  ambiente.
+## 1) Visão Geral
+Aplicativo de nutrição com insights baseados em dados pessoais e perfil astrológico. Frontend em **Streamlit**, backend em **Python** com **PostgreSQL**, geração de PDF e **Plano IA** liberado após pagamento.
 
-## Estrutura de diretórios
+---
 
-A estrutura do projeto está organizada da seguinte forma:
+## 2) Fluxo do Usuário (alto nível)
+1. **Usuário acessa o site** (`/`).
+2. **Formulário 4 etapas** (`/form`) — dados pessoais, avaliação nutricional, psicológica, LGPD.
+3. **Salvar no DB** (status `concluido`) e manter `pac_id`/`session_id` em estado de sessão.
+4. **Renderizar Dashboard & Insights (na página)** (`/resultado?pac_id=...`).
+5. **Ações do usuário** (na mesma tela):
+   - **Compartilhar resultado** (link curto, somente leitura).
+   - **Salvar PDF (resultado)** — resumo sem Plano IA.
+   - **Pagamento** (checkout externo).
+6. **Checkout externo** → **Webhook** atualiza `status_pagamento = pago`.
+7. **Gerar Plano IA** (cardápio + substituições ±2%).
+8. **Atualizar Dashboard** com Plano IA e disponibilizar **PDF completo**.
+9. **Reabrir sessão** em `/acessar` com **celular + data de nascimento** → validar → carregar Dashboard.
 
+---
+
+## 3) Diagrama (Mermaid)
+> Cole diretamente no README do GitHub: ele renderiza o Mermaid nativamente.
+
+```mermaid
+flowchart TD
+A[Usuário acessa site (/)] --> B[Formulário 4 etapas (/form)]
+B --> C[Salvar no DB]
+C --> D[Renderizar Dashboard & Insights (na página) (/resultado?pac_id=...)]
+
+D --> E{Ações do usuário}
+E --> E1[Compartilhar resultado (link curto)]
+E --> E2[Salvar PDF (resultado)]
+E --> E3[Pagamento]
+
+E3 --> F[Checkout externo]
+F --> |aprovado| G[Webhook → status = pago]
+G --> H[Gerar Plano IA (cardápio + substituições)]
+H --> I[Atualizar Dashboard com Plano IA]
+I --> J[PDF completo disponível]
+
+K[Reabrir sessão (/acessar)] --> L[Validar celular + data nasc.]
+L --> |ok| D
 ```
-nutrisigno/
-├── app.py               # Aplicação Streamlit principal
-├── requirements.txt     # Dependências do projeto
-├── .streamlit/
-│   └── config.toml      # Configurações de tema e layout da interface
-├── modules/
-│   ├── firebase_utils.py  # Inicialização e salvamento no Firebase
-│   ├── openai_utils.py    # Funções para interação com a OpenAI
-│   ├── pdf_generator.py   # Geração de relatório PDF com gráficos
-│   └── email_utils.py     # Envio de e-mails com anexos
-└── assets/
-    └── example_logo.png   # Imagem de exemplo para o relatório (substitua à vontade)
+
+---
+
+## 4) Rotas e Componentes
+- `/` — landing minimal (CTA).
+- `/form` — `FormStepper` + validações; `on_submit → save_user() → redirect /resultado`.
+- `/resultado` — monta Dashboard, mostra ações (compartilhar, PDF, pagamento, download plano IA).
+- `/acessar` — form **celular + data_nasc** → busca e redirect para `/resultado`.
+
+**Serviços** (`services/`):
+- `db.py` (CRUD + upsert por `pac_id`).
+- `pdf.py` (resumo e completo).
+- `payments.py` (checkout + webhook handler).
+- `ia_plan.py` (gerar plano e substituições).
+- `links.py` (slug curto de compartilhamento).
+
+---
+
+## 5) Banco de Dados (PostgreSQL)
+### Tabelas
+```sql
+CREATE TABLE usuarios (
+  pac_id UUID PRIMARY KEY,
+  created_at TIMESTAMPTZ DEFAULT now(),
+  updated_at TIMESTAMPTZ DEFAULT now(),
+  nome TEXT, email TEXT,
+  telefone TEXT,             -- armazenar normalizado (E.164)
+  data_nasc DATE,
+  signo TEXT,
+  altura_m NUMERIC,
+  peso_kg NUMERIC,
+  avaliacao_nutricional JSONB,
+  avaliacao_psicologica JSONB,
+  status_pagamento TEXT CHECK (status_pagamento IN ('pendente','pago')) DEFAULT 'pendente',
+  consent_lgpd_at TIMESTAMPTZ
+);
+
+CREATE TABLE resultados (
+  pac_id UUID REFERENCES usuarios(pac_id) ON DELETE CASCADE,
+  insights_basicos JSONB,
+  pdf_resumo_url TEXT,
+  plano_ia JSONB,
+  substituicoes JSONB,
+  pdf_completo_url TEXT,
+  status_plano TEXT CHECK (status_plano IN ('nao_gerado','gerando','disponivel','erro')) DEFAULT 'nao_gerado',
+  PRIMARY KEY (pac_id)
+);
+
+CREATE TABLE pagamentos (
+  id BIGSERIAL PRIMARY KEY,
+  pac_id UUID REFERENCES usuarios(pac_id) ON DELETE CASCADE,
+  provider TEXT,
+  checkout_id TEXT,
+  status TEXT,
+  valor NUMERIC(10,2),
+  webhook_payload JSONB,
+  created_at TIMESTAMPTZ DEFAULT now()
+);
+
+CREATE INDEX idx_usuarios_tel_nasc ON usuarios(telefone, data_nasc);
 ```
 
-## Configuração
+---
 
-Antes de executar o aplicativo, configure as seguintes variáveis de
-ambiente ou crie um arquivo `.env` no diretório raiz com as chaves
-necessárias. Você também pode definir as variáveis no serviço de deploy
-(Render, Vercel etc.).
+## 6) Eventos e Webhooks (contratos)
+- `on_form_submit(pac_id)` → persiste e redireciona para `/resultado`.
+- `POST /webhooks/payments` → body do provedor; ao `status=paid`:
+  1. `UPDATE usuarios SET status_pagamento='pago' WHERE pac_id=?`
+  2. `ia_plan.generate(pac_id)` → grava em `resultados` e marca `status_plano='disponivel'`.
+- `GET /resultado?pac_id=...` → compõe cards + botões conforme estado.
 
-| Variável             | Descrição                                                                 |
-|----------------------|---------------------------------------------------------------------------|
-| `OPENAI_API_KEY`     | Chave de API para acesso à OpenAI.                                        |
-| `FIREBASE_JSON`      | Conteúdo JSON da conta de serviço do Firebase (codificado em base64).      |
-| `SMTP_SERVER`        | Endereço do servidor SMTP para envio de e‑mails.                          |
-| `SMTP_PORT`          | Porta do servidor SMTP.                                                   |
-| `EMAIL_USERNAME`     | Nome de usuário para autenticação no servidor SMTP.                        |
-| `EMAIL_PASSWORD`     | Senha ou token de autenticação SMTP.                                      |
-| `SENDER_EMAIL`       | Endereço de e‑mail do remetente (o app enviará mensagens a partir dele).   |
+---
 
-Para o Firebase, copie o conteúdo JSON da conta de serviço (Firebase
-Admin SDK) e converta para base64 usando uma ferramenta como
-`base64` no terminal. Em seguida, defina a variável `FIREBASE_JSON` com
-esse valor. O código decodificará automaticamente esse conteúdo.
+## 7) Segurança & LGPD (MVP pragmático)
+- Reabertura por **celular + data_nasc**:
+  - salvar **hash(SHA-256)** de `telefone_normalizado + data_nasc_iso` com **salt** do servidor e usar para matching.
+  - Rate limit + reCAPTCHA no `/acessar`.
+- Links de **compartilhamento** exibem apenas **resultado básico** (sem PII sensível).
+- Log e **timestamp** do aceite LGPD por `pac_id`.
 
-## Executando localmente
+---
 
-1. Clone ou extraia o repositório.
-2. Certifique‑se de ter Python 3.8 ou superior instalado.
-3. Instale as dependências com `pip install -r requirements.txt`.
-4. Defina as variáveis de ambiente necessárias (OpenAI, Firebase e
-   servidor SMTP).
-5. Execute a aplicação com `streamlit run app.py`.
+## 8) Checklists de Implementação
+### Frontend (Streamlit)
+- [ ] Form 4 etapas com validações e progresso
+- [ ] Estado `pac_id` em `st.session_state`
+- [ ] Tela `/resultado` reagindo a estados: `pendente` vs `pago`
+- [ ] Botões: compartilhar, PDF (resumo), pagamento, download Plano IA
+- [ ] Tela `/acessar` com validação e redirect
 
-## Observações
+### Backend/Serviços
+- [ ] CRUD `usuarios`/`resultados`/`pagamentos`
+- [ ] Webhook pagamentos com verificação de assinatura
+- [ ] Geração PDF (resumo e completo)
+- [ ] Geração Plano IA (cardápio, substituições ±2%)
 
-* A integração de pagamento no exemplo é apenas simbólica. Em produção,
-  recomenda‑se utilizar um provedor de pagamentos (por exemplo,
-  Stripe, PayPal) e verificar o pagamento antes de gerar e enviar o
-  relatório.
-* Os textos gerados pela OpenAI devem ser validados por um
-  nutricionista antes de serem utilizados de forma prescritiva.
-* O design é minimalista por padrão, mas pode ser customizado em
-  `.streamlit/config.toml` e com recursos adicionais em `/assets`.
+---
+
+## 9) Estados esperados (QA rápido)
+- **Novo usuário**: `status_pagamento='pendente'`, `status_plano='nao_gerado'`
+- **Pago**: `status_pagamento='pago'`, `status_plano='disponivel'` e `pdf_completo_url` preenchido
+- **Erro IA**: `status_plano='erro'` (mostrar retry no painel)
+
+---
+
+## 10) Roadmap curto
+- Link de compartilhamento com expiração opcional
+- Fila/worker para geração IA (evitar bloqueio de UI)
+- Cache de PDFs para re-download
+- Métricas no `/dashboard` (admin)
+
+---
+
+**Responsável:** Paganini (owner).  
+**Última revisão:** 2025-11-11 (America/Sao_Paulo).
