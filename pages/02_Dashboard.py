@@ -7,6 +7,7 @@ import logging
 import re
 import unicodedata
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, Iterable, Optional, Tuple
 
 import streamlit as st
@@ -1176,53 +1177,100 @@ def _redirect_to_form(pac_id: str) -> None:
             st.stop()
 
 
-def _render_plan_sections(
-    state: str,
-    respostas: Dict[str, Any],
-    plan: Dict[str, Any],
-) -> None:
+def _render_plan_sections(state: str, payload: Dict[str, Any]) -> None:
     if state == "S1":
-        st.info("Plano IA liberado após confirmação de pagamento.")
+        st.info("Plano completo será liberado automaticamente após confirmação do pagamento.")
         return
     if state == "S3":
-        st.error("Não conseguimos gerar o Plano IA automaticamente neste momento.")
-        if st.button("Tentar novamente", type="primary"):
-            st.toast("Solicitação reenviada para nossa equipe. Tente novamente em instantes.")
+        st.error("Não conseguimos gerar o Plano completo automaticamente neste momento.")
+        st.warning("Erro técnico. Nossa equipe já foi notificada; tente novamente mais tarde.")
         return
 
-    st.markdown("### Plano IA e Substituições")
-    diet = plan.get("diet", {}) if isinstance(plan, dict) else {}
-    meals = diet.get("meals") if isinstance(diet, dict) else []
-    substitutions = diet.get("substitutions") if isinstance(diet, dict) else {}
-    hydration_note = diet.get("hydration") if isinstance(diet, dict) else None
+    st.markdown("### Plano NutriSigno pós-pagamento")
 
-    tabs = st.tabs(["Cardápio base", "Substituições ±2%", "Notas"])
-    with tabs[0]:
-        if not meals:
-            st.info("Plano IA indisponível no momento. Tente novamente mais tarde.")
-        for meal in meals or []:
-            title = meal.get("title") or "Refeição"
-            kcal = meal.get("kcal")
-            items = meal.get("items") or []
-            header = f"{title} — {kcal} kcal" if kcal else title
-            with st.expander(header, expanded=False):
-                for item in items:
-                    st.markdown(f"- {item}")
-    with tabs[1]:
-        if not substitutions:
-            st.info("Substituições serão liberadas junto com o plano completo.")
-        else:
-            for refeicao, itens in substitutions.items():
-                st.markdown(f"**{refeicao}**")
-                for opcao in itens:
-                    st.markdown(f"- {opcao}")
-    with tabs[2]:
-        st.metric("Macro Split", "Indefinido")
-        if hydration_note:
-            st.markdown(f"- 💧 {hydration_note}")
+    plano_ia = payload.get("plano_ia") or {}
+    substituicoes = payload.get("substituicoes") or {}
+    combos = payload.get("cardapio_ia") or {}
+    pdf_completo = payload.get("pdf_completo_url")
+
+    cols = st.columns(3, gap="large")
+
+    with cols[0]:
+        kcal_alvo = plano_ia.get("kcal_alvo")
+        kcal_pdf = plano_ia.get("kcal")
+        arquivo = Path(str(plano_ia.get("arquivo") or "")).name or "—"
         st.markdown(
-            "- Utilize o plano como guia educativo; ajustes clínicos exigem acompanhamento profissional."
+            f"""
+            <div class='card'>
+              <div class='card-title'>Seu Plano Alimentar</div>
+              <p class='sub'>Base PDF selecionada</p>
+              <div class='kpi'>{kcal_pdf or '—'} kcal</div>
+              <p class='sub'>Alvo calculado: {kcal_alvo or '—'} kcal/dia</p>
+              <p class='sub'>Arquivo base: {arquivo}</p>
+            </div>
+            """,
+            unsafe_allow_html=True,
         )
+        if pdf_completo:
+            st.link_button("Baixar PDF consolidado", pdf_completo, use_container_width=True)
+        else:
+            st.caption("PDF consolidado será disponibilizado ao concluir o processamento.")
+
+    with cols[1]:
+        categorias = substituicoes.get("categorias") or []
+        if categorias:
+            resumo = "<br/>".join(
+                f"{html.escape(cat['categoria'])} · {len(cat.get('itens', []))} itens"
+                for cat in categorias[:4]
+            )
+        else:
+            resumo = "Nenhuma categoria vinculada."
+        st.markdown(
+            f"""
+            <div class='card'>
+              <div class='card-title'>Substituições vinculadas</div>
+              <p class='sub'>{resumo}</p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        if categorias:
+            with st.expander("Ver tabela completa"):
+                for categoria in categorias:
+                    st.markdown(f"**{categoria['categoria']}** — {categoria.get('descricao','')}")
+                    refeicoes = categoria.get("refeicoes") or []
+                    if refeicoes:
+                        st.markdown(
+                            ", ".join(
+                                f"{item['refeicao']}: {item['porcao']}" for item in refeicoes
+                            )
+                        )
+                    for item in categoria.get("itens", []):
+                        detalhe = f" ({item['porcao']})" if item.get("porcao") else ""
+                        st.markdown(f"- {item['nome']}{detalhe}")
+        else:
+            st.caption("Substituições serão preenchidas após o processamento completo.")
+
+    with cols[2]:
+        combos_list = combos.get("combos") or []
+        timestamp = combos.get("timestamp")
+        versao = combos.get("versao")
+        st.markdown(
+            f"""
+            <div class='card'>
+              <div class='card-title'>Sugestões IA</div>
+              <p class='sub'>Versão {versao or '—'} · {timestamp or '—'}</p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        if combos_list:
+            for combo in combos_list:
+                refeicao = combo.get("refeicao", "—").capitalize()
+                texto = combo.get("combo", "")
+                st.markdown(f"**{refeicao}:** {texto}")
+        else:
+            st.caption("Sugestões ainda não disponíveis. Assim que processadas, aparecerão aqui.")
 
 
 # ---------------------------------------------------------------------------
@@ -1373,7 +1421,7 @@ def main() -> None:
         with st.expander("Resumo IA (educativo)"):
             st.write(ai_summary)
 
-    _render_plan_sections(state_info["state"], respostas, plan)
+    _render_plan_sections(state_info["state"], payload)
 
     st.caption("Compartilhe apenas com pessoas de confiança. NutriSigno é um apoio educativo, não substitui acompanhamento clínico.")
 
