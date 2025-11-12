@@ -10,24 +10,9 @@ import streamlit as st
 
 from modules import email_utils, openai_utils, pdf_generator, repo
 from modules.client_state import get_user_cached, load_client_state, save_client_state
-from modules.form.exporters import build_insights_pdf_bytes, build_share_png_bytes
 from modules.form.mapper import map_ui_to_dto
 from modules.form.service import FormService
 from modules.form.state import ensure_bootstrap_ready, initialize_session, next_step
-from modules.form.ui_insights import (
-    build_estrategia_text,
-    build_perfil_text,
-    collect_comportamentos,
-    dashboard_style,
-    element_icon,
-    extract_bristol_tipo,
-    extract_cor_urina,
-    imc_categoria_cor,
-    plot_agua,
-    plot_imc_horizontal,
-    signo_elemento,
-    signo_symbol,
-)
 from modules.form.ui_sections import (
     SectionResult,
     nutrition_section,
@@ -138,30 +123,6 @@ def _render_section(result: SectionResult) -> None:
         save_client_state(st.session_state.pac_id, str(st.session_state.step))
 
 
-def _fallback_insights(payload: Dict[str, Any]) -> Dict[str, Any]:
-    peso = float(payload.get("peso") or 70)
-    altura_cm = float(payload.get("altura") or 170)
-    altura_m = max(0.1, altura_cm / 100.0)
-    bmi = round(peso / (altura_m**2), 1)
-    recomendado = round(max(1.5, peso * 0.035), 1)
-    return {
-        "bmi": bmi,
-        "bmi_category": "Eutrofia"
-        if 18.5 <= bmi < 25
-        else ("Baixo peso" if bmi < 18.5 else ("Sobrepeso" if bmi < 30 else "Obesidade")),
-        "water_status": "OK",
-        "bristol": "Padrão dentro do esperado",
-        "urine": "Hidratado",
-        "motivacao": int(payload.get("motivacao") or 3),
-        "estresse": int(payload.get("estresse") or 3),
-        "sign_hint": "Use seu signo como inspiração, não como prescrição.",
-        "consumption": {
-            "water_liters": float(payload.get("consumo_agua") or 1.5),
-            "recommended_liters": recomendado,
-        },
-    }
-
-
 def _render_insights(service: FormService, payload: Dict[str, Any]) -> None:
     pac_id = _persist_form(service, payload)
     if not pac_id:
@@ -175,188 +136,21 @@ def _render_insights(service: FormService, payload: Dict[str, Any]) -> None:
         st.error("Não foi possível validar seu cadastro após o salvamento. Tente novamente.")
         return
 
+    st.session_state.dashboard_insights = None
+    st.session_state.dashboard_ai_summary = None
+    st.success("Cadastro salvo com sucesso. Redirecionando para o painel...")
+
     try:
-        ai_pack = openai_utils.generate_insights(payload)
-        insights = ai_pack.get("insights", {})
-        ai_summary = ai_pack.get("ai_summary", "Resumo indisponível (modo simulado).")
-    except Exception as exc:  # pragma: no cover - fallback
-        st.warning(f"Modo fallback automático: {exc}")
-        insights = _fallback_insights(payload)
-        ai_summary = "Resumo simulado (fallback hard)."
-
-    peso = float(payload.get("peso") or 0.0)
-    altura_cm = float(payload.get("altura") or 0.0)
-    altura_m = round(altura_cm / 100.0, 2) if altura_cm else 0.0
-    imc = round(peso / (altura_m**2), 1) if peso and altura_m else 0.0
-
-    imc_value = insights.get("bmi") or imc or 0.0
-    insights["bmi"] = float(imc_value)
-    categoria_base = insights.get("bmi_category") or imc_categoria_cor(insights["bmi"])[0]
-    insights["bmi_category"] = categoria_base
-
-    consumo_info = insights.get("consumption") or {}
-    consumo_real = float(consumo_info.get("water_liters") or payload.get("consumo_agua") or 0.0)
-    recomendado = float(
-        consumo_info.get("recommended_liters")
-        or (round(max(1.5, peso * 0.035), 1) if peso else 2.0)
-    )
-    insights["consumption"] = {
-        "water_liters": consumo_real,
-        "recommended_liters": recomendado,
-    }
-    insights.setdefault("water_status", "OK" if recomendado and consumo_real >= recomendado else "Abaixo do ideal")
-    insights.setdefault("motivacao", int(payload.get("motivacao") or 0))
-    insights.setdefault("estresse", int(payload.get("estresse") or 0))
-    insights.setdefault("bristol", extract_bristol_tipo(payload.get("tipo_fezes")))
-    insights.setdefault("urine", extract_cor_urina(payload.get("cor_urina")))
-    insights.setdefault("sign_hint", "Use seu signo como inspiração de hábitos saudáveis.")
-
-    signo = payload.get("signo") or "—"
-    elemento = signo_elemento(signo)
-    elemento_icon = element_icon(elemento)
-    perfil_text = build_perfil_text(payload)
-    estrategia_text = build_estrategia_text(peso, recomendado, categoria_base)
-    bristol_tipo = extract_bristol_tipo(payload.get("tipo_fezes"), insights.get("bristol", ""))
-    cor_urina = extract_cor_urina(payload.get("cor_urina"), insights.get("urine", ""))
-    comportamentos = collect_comportamentos(payload)
-
-    dashboard_style()
-
-    col_signo, col_elem, col_perfil, col_estrat = st.columns([1, 1, 2, 2], gap="medium")
-    with col_signo:
-        st.markdown('<div class="card"><div class="card-title">Signo</div>', unsafe_allow_html=True)
-        st.markdown(
-            f'<div class="square">{signo_symbol(signo)}</div>',
-            unsafe_allow_html=True,
-        )
-        st.markdown(
-            f'<div class="small-muted">{signo}</div></div>',
-            unsafe_allow_html=True,
-        )
-
-    with col_elem:
-        st.markdown('<div class="card"><div class="card-title">Elemento</div>', unsafe_allow_html=True)
-        st.markdown(
-            f'<div class="square-element">{elemento_icon}</div>',
-            unsafe_allow_html=True,
-        )
-        st.markdown(
-            f'<div class="small-muted">{elemento}</div></div>',
-            unsafe_allow_html=True,
-        )
-
-    with col_perfil:
-        st.markdown(
-            f"""
-            <div class="card">
-              <div class="card-title">Perfil da Pessoa</div>
-              <div class="kpi" style="font-size:18px">{perfil_text}</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-    with col_estrat:
-        st.markdown(
-            f"""
-            <div class="card">
-              <div class="card-title">Estratégia Nutricional</div>
-              <div class="kpi" style="font-size:18px">{estrategia_text}</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-
-    st.markdown('<div class="two-col">', unsafe_allow_html=True)
-    st.markdown(
-        f"""
-        <div class="card">
-          <div class="card-title">Bristol (fezes)</div>
-          <div class="kpi" style="font-size:18px">Bristol</div>
-          <div class="sub">{bristol_tipo}</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        f"""
-        <div class="card">
-          <div class="card-title">Cor da urina</div>
-          <div class="kpi" style="font-size:18px">Cor</div>
-          <div class="sub">{cor_urina}</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-    st.markdown('</div>', unsafe_allow_html=True)
-
-    colA, colB = st.columns(2, gap="medium")
-    with colA:
-        fig_imc, categoria_imc = plot_imc_horizontal(insights["bmi"] or 0.0)
-        has_imc = insights["bmi"] > 0
-        categoria_display = categoria_imc if has_imc else "Indisponível"
-        st.markdown('<div class="card"><div class="card-title">IMC</div>', unsafe_allow_html=True)
-        st.plotly_chart(fig_imc, use_container_width=True, config={"displayModeBar": False})
-        imc_text = f"{insights['bmi']:.1f}" if has_imc else "--"
-        peso_text = f"{peso:.1f} kg" if peso else "--"
-        altura_m = round(altura_cm / 100.0, 2) if altura_cm else 0.0
-        altura_text = f"{altura_m:.2f} m" if altura_m else "--"
-        st.markdown(
-            f"<div class='sub'><b>Categoria:</b> {categoria_display} &nbsp; "
-            f"<b>IMC:</b> {imc_text} &nbsp; <b>Peso:</b> {peso_text} &nbsp; "
-            f"<b>Altura:</b> {altura_text}</div></div>",
-            unsafe_allow_html=True,
-        )
-
-    with colB:
-        fig_agua = plot_agua(consumo_real, recomendado)
-        st.markdown('<div class="card"><div class="card-title">Hidratação</div>', unsafe_allow_html=True)
-        st.plotly_chart(fig_agua, use_container_width=True, config={"displayModeBar": False})
-        ok = recomendado and consumo_real >= recomendado
-        badge = (
-            '<span style="background:#e8f7ef;color:#127a46;padding:2px 8px;border-radius:999px;font-size:12px">Meta atingida</span>'
-            if ok
-            else '<span style="background:#fff5e6;color:#8a5200;padding:2px 8px;border-radius:999px;font-size:12px">Abaixo do ideal</span>'
-        )
-        st.markdown(f'<div class="sub">{badge}</div></div>', unsafe_allow_html=True)
-
-    chips = "".join([f"<span>{item}</span>" for item in comportamentos]) or '<span style="color:#718096;">Sem itens cadastrados.</span>'
-    st.markdown(
-        f"""
-        <div class="card">
-          <div class="card-title">Comportamento</div>
-          <div class="card" style="background:#fbfcfd;border:1px dashed #e6ebef;">
-            <div class="chips">{chips}</div>
-          </div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    with st.expander("Resumo dos insights"):
-        st.write(ai_summary)
-
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        st.download_button(
-            "Exportar PDF",
-            data=build_insights_pdf_bytes(insights),
-            file_name="insights.pdf",
-            mime="application/pdf",
-        )
-    with c2:
-        st.download_button(
-            "Baixar imagem",
-            data=build_share_png_bytes(insights),
-            file_name="insights.png",
-            mime="image/png",
-        )
-    with c3:
-        if st.button("Gerar plano nutricional e prosseguir para pagamento"):
-            st.session_state.step += 1
-            if st.session_state.get("pac_id"):
-                save_client_state(st.session_state.pac_id, str(st.session_state.step))
-            st.rerun()
+        st.switch_page("pages/02_Dashboard.py")
+    except Exception:
+        try:
+            params = st.experimental_get_query_params()
+            params["page"] = "02_Dashboard"
+            st.experimental_set_query_params(**params)
+            st.experimental_rerun()
+        except Exception:
+            st.info("Use o menu lateral para acessar o painel '02_Dashboard'.")
+            st.stop()
 
 
 def _render_payment(service: FormService) -> None:
