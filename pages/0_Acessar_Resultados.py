@@ -46,6 +46,21 @@ def _canon_dob_to_br(s: str) -> str:
             continue
     return s
 
+
+def _redirect_to_dashboard(pac_id: str) -> None:
+    save_client_state(pac_id, str(st.session_state.get("step") or ""))
+    try:
+        st.switch_page("pages/02_Dashboard.py")
+    except Exception:
+        try:
+            params = st.experimental_get_query_params()
+            params["page"] = "02_Dashboard"
+            st.experimental_set_query_params(**params)
+            st.experimental_rerun()
+        except Exception:
+            st.info("Use o menu lateral para acessar o painel '02_Dashboard'.")
+            st.stop()
+
 # ---------------------------------------------------------------------
 # UI
 # ---------------------------------------------------------------------
@@ -85,24 +100,22 @@ if submitted:
         if user:
             st.success("Cadastro encontrado.")
             pac_id_found = user.get("pac_id")
-            st.session_state.pac_id = pac_id_found
-            st.session_state.paciente_data = user
-            step_to_persist = st.session_state.get("step")
             if pac_id_found:
-                save_client_state(
-                    pac_id_found,
-                    str(step_to_persist) if step_to_persist else None,
-                )
+                st.session_state.pac_id = pac_id_found
+            st.session_state.paciente_data = user
+            st.session_state.data = user.get("respostas") or {}
+            st.session_state.plan = user.get("plano_alimentar") or {}
+            st.session_state.plano_compacto = user.get("plano_alimentar_compacto") or {}
+            st.session_state.macros = user.get("macros") or {}
+            st.session_state.dashboard_insights = None
+            st.session_state.dashboard_ai_summary = None
+
+            if pac_id_found:
                 get_user_cached(pac_id_found)
-            # Exibição mínima para validação — ajuste conforme seu layout do Dashboard
-            with st.expander("Dados brutos do cadastro (debug)"):
-                st.json(user, expanded=False)
-
-            # -----------------------------------------------------------------
-            # AQUI você pode chamar seu renderer de cards/dash, ex.:
-            # render_dashboard(user)
-            # -----------------------------------------------------------------
-
+                _redirect_to_dashboard(pac_id_found)
+                st.stop()
+            else:
+                st.warning("Cadastro localizado, mas sem identificador válido. Tente novamente.")
         else:
             st.warning("Não encontramos nenhum cadastro com esses dados.")
 
