@@ -1,32 +1,27 @@
-"""Página centralizada de exibição dos resultados do paciente."""
+"""Página de resultados personalizada com métricas-base e cards essenciais."""
 
 from __future__ import annotations
 
+import html
 import logging
-from typing import Any, Dict, Optional
+import re
+import unicodedata
+from datetime import datetime
+from typing import Any, Dict, Iterable, Optional, Tuple
 
 import streamlit as st
 
 from modules import app_bootstrap, openai_utils, repo
 from modules.client_state import get_user_cached, load_client_state, save_client_state
 from modules.form.exporters import build_insights_pdf_bytes, build_share_png_bytes
-from modules.form.ui_insights import (
-    build_estrategia_text,
-    build_perfil_text,
-    collect_comportamentos,
-    dashboard_style,
-    element_icon,
-    extract_bristol_tipo,
-    extract_cor_urina,
-    imc_categoria_cor,
-    plot_agua,
-    plot_imc_horizontal,
-    signo_elemento,
-    signo_symbol,
-)
+from modules.form.ui_insights import extract_bristol_tipo, extract_cor_urina
 
 log = logging.getLogger(__name__)
 
+
+# ---------------------------------------------------------------------------
+# Sessão e carregamento de dados
+# ---------------------------------------------------------------------------
 
 def _get_query_param(key: str) -> Optional[str]:
     try:
@@ -80,13 +75,17 @@ def _load_payload(pac_id: str) -> Optional[Dict[str, Any]]:
     return payload
 
 
+# ---------------------------------------------------------------------------
+# Normalização de insights herdados
+# ---------------------------------------------------------------------------
+
 def _fallback_insights(payload: Dict[str, Any]) -> Dict[str, Any]:
     peso = float(payload.get("peso") or 70)
     altura_cm = float(payload.get("altura") or 170)
     altura_m = max(0.1, altura_cm / 100.0)
     bmi = round(peso / (altura_m**2), 1)
     recomendado = round(max(1.5, peso * 0.035), 1)
-    categoria, _ = imc_categoria_cor(bmi)
+    categoria = "Peso normal" if 18.5 <= bmi < 25 else ("Abaixo do peso" if bmi < 18.5 else "Sobrepeso")
     return {
         "bmi": bmi,
         "bmi_category": categoria,
@@ -111,7 +110,7 @@ def _normalize_insights(payload: Dict[str, Any], insights: Dict[str, Any]) -> Di
 
     bmi_value = insights.get("bmi") or imc or 0.0
     insights["bmi"] = float(bmi_value)
-    insights["bmi_category"] = insights.get("bmi_category") or imc_categoria_cor(insights["bmi"])[0]
+    insights["bmi_category"] = insights.get("bmi_category") or _imc_category(bmi_value)[0]
 
     consumo_info = insights.get("consumption") or {}
     consumo_real = float(consumo_info.get("water_liters") or payload.get("consumo_agua") or 0.0)
@@ -123,7 +122,13 @@ def _normalize_insights(payload: Dict[str, Any], insights: Dict[str, Any]) -> Di
         "water_liters": consumo_real,
         "recommended_liters": recomendado,
     }
-    insights.setdefault("water_status", "OK" if recomendado and consumo_real >= recomendado else "Abaixo do ideal")
+    if recomendado and consumo_real:
+        insights.setdefault(
+            "water_status",
+            "OK" if recomendado and consumo_real >= recomendado else "Abaixo do ideal",
+        )
+    else:
+        insights.setdefault("water_status", "Indefinido")
     insights.setdefault("motivacao", int(payload.get("motivacao") or 0))
     insights.setdefault("estresse", int(payload.get("estresse") or 0))
     insights.setdefault("bristol", extract_bristol_tipo(payload.get("tipo_fezes")))
@@ -133,7 +138,7 @@ def _normalize_insights(payload: Dict[str, Any], insights: Dict[str, Any]) -> Di
     return insights
 
 
-def _prepare_insights(payload: Dict[str, Any]) -> tuple[Dict[str, Any], str]:
+def _prepare_insights(payload: Dict[str, Any]) -> Tuple[Dict[str, Any], str]:
     cached_insights = st.session_state.get("dashboard_insights")
     cached_summary = st.session_state.get("dashboard_ai_summary")
     if cached_insights is not None and cached_summary is not None:
@@ -155,163 +160,642 @@ def _prepare_insights(payload: Dict[str, Any]) -> tuple[Dict[str, Any], str]:
     return insights, ai_summary
 
 
-def _render_personal_header(respostas: Dict[str, Any], insights: Dict[str, Any]) -> None:
-    signo = respostas.get("signo") or "—"
-    elemento = signo_elemento(signo)
-    elemento_icon = element_icon(elemento)
-    perfil_text = build_perfil_text(respostas)
-    estrategia_text = build_estrategia_text(
-        float(respostas.get("peso") or 0.0),
-        insights["consumption"].get("recommended_liters", 0.0),
-        insights.get("bmi_category", "—"),
+# ---------------------------------------------------------------------------
+# Utilidades de cálculo
+# ---------------------------------------------------------------------------
+
+PRIMARY = "#6C5DD3"
+SUCCESS = "#28B487"
+WARNING = "#F4A261"
+CRITICAL = "#E76F51"
+NEUTRAL = "#CBD5F5"
+
+
+def _to_float(value: Any) -> Optional[float]:
+    if value in (None, "", "—"):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value).strip().lower()
+    if not text:
+        return None
+    text = text.replace("kcal", "").replace("cal", "").replace("ml", "").replace("l", "")
+    text = text.replace("horas", "").replace("hora", "").replace("h", "")
+    text = text.replace("litros", "").replace("l/dia", "")
+    text = text.replace("/dia", "")
+    text = text.replace(",", ".")
+    cleaned = "".join(ch if ch.isdigit() or ch in ".-" else " " for ch in text)
+    parts = cleaned.split()
+    for part in parts:
+        try:
+            return float(part)
+        except ValueError:
+            continue
+    return None
+
+
+def _strip_accents(text: str | None) -> str:
+    if not text:
+        return ""
+    return "".join(
+        c for c in unicodedata.normalize("NFD", text) if unicodedata.category(c) != "Mn"
+    ).lower()
+
+
+def _imc_category(imc: float) -> Tuple[str, str]:
+    if imc <= 0:
+        return "Indefinido", WARNING
+    if imc < 18.5:
+        return "Abaixo do peso", WARNING
+    if imc < 25:
+        return "Peso normal", SUCCESS
+    if imc < 30:
+        return "Sobrepeso", WARNING
+    return "Obesidade", CRITICAL
+
+
+def _resolve_status(payload: Dict[str, Any]) -> Dict[str, str]:
+    pagamento = (payload.get("status_pagamento") or payload.get("status") or "").strip().lower()
+    plano = (payload.get("status_plano") or "").strip().lower()
+    if plano == "erro":
+        return {"state": "S3", "pagamento": pagamento or "pendente", "plano": plano or "erro"}
+    if pagamento == "pago" or plano in {"disponivel", "gerado"} or payload.get("plano_alimentar"):
+        return {"state": "S2", "pagamento": pagamento or "pago", "plano": plano or "disponivel"}
+    return {"state": "S1", "pagamento": pagamento or "pendente", "plano": plano or "nao_gerado"}
+
+
+KCAL_TABLE = {
+    "nao_treinado": {
+        "emagrecer": (23, 27, 25),
+        "manter": (28, 32, 30),
+        "ganhar": (33, 37, 35),
+    },
+    "treinado": {
+        "emagrecer": (26, 30, 28),
+        "manter": (31, 35, 33),
+        "ganhar": (36, 40, 38),
+    },
+}
+
+
+def _infer_goal(respostas: Dict[str, Any]) -> str:
+    raw = (
+        respostas.get("objetivo")
+        or respostas.get("objetivo_principal")
+        or respostas.get("meta_principal")
+        or ""
     )
-    bristol_tipo = extract_bristol_tipo(respostas.get("tipo_fezes"), insights.get("bristol", ""))
-    cor_urina = extract_cor_urina(respostas.get("cor_urina"), insights.get("urine", ""))
-    comportamentos = collect_comportamentos(respostas)
+    normalized = _strip_accents(str(raw))
+    if any(term in normalized for term in ("emag", "sec", "defini", "perda")):
+        return "emagrecer"
+    if any(term in normalized for term in ("ganh", "massa", "hiper")):
+        return "ganhar"
+    return "manter"
 
-    dashboard_style()
 
-    col_signo, col_elem, col_perfil, col_estrat = st.columns([1, 1, 2, 2], gap="medium")
-    with col_signo:
-        st.markdown('<div class="card"><div class="card-title">Signo</div>', unsafe_allow_html=True)
-        st.markdown(
-            f'<div class="square">{signo_symbol(signo)}</div>',
-            unsafe_allow_html=True,
-        )
-        st.markdown(
-            f'<div class="small-muted">{signo}</div></div>',
-            unsafe_allow_html=True,
-        )
+def _is_trained(respostas: Dict[str, Any]) -> bool:
+    for key in ("perfil_treinado", "eh_treinado", "treinado", "perfil"):
+        value = respostas.get(key)
+        if isinstance(value, bool):
+            return value
+        if isinstance(value, str):
+            norm = _strip_accents(value)
+            if norm in {"treinado", "sim", "atleta", "avancado", "avançado"}:
+                return True
+            if norm in {"nao", "não", "iniciante", "sedentario", "sedentário"}:
+                return False
+    nivel = _strip_accents(str(respostas.get("nivel_atividade") or ""))
+    return any(term in nivel for term in ("intenso", "alto", "treino"))
 
-    with col_elem:
-        st.markdown('<div class="card"><div class="card-title">Elemento</div>', unsafe_allow_html=True)
-        st.markdown(
-            f'<div class="square-element">{elemento_icon}</div>',
-            unsafe_allow_html=True,
-        )
-        st.markdown(
-            f'<div class="small-muted">{elemento}</div></div>',
-            unsafe_allow_html=True,
-        )
 
-    with col_perfil:
-        st.markdown(
-            f"""
-            <div class="card">
-              <div class="card-title">Perfil da Pessoa</div>
-              <div class="kpi" style="font-size:18px">{perfil_text}</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
+def _extract_sleep_hours(respostas: Dict[str, Any]) -> Optional[float]:
+    keys = (
+        "sono_horas",
+        "horas_sono",
+        "sono",
+        "tempo_sono",
+        "sleep_hours",
+        "sono_noite",
+    )
+    for key in keys:
+        value = respostas.get(key)
+        if value in (None, ""):
+            continue
+        if isinstance(value, (int, float)):
+            return float(value)
+        text = str(value).strip().lower()
+        if not text:
+            continue
+        if ":" in text:
+            try:
+                hours, minutes = text.split(":", 1)
+                return float(hours) + float(minutes) / 60.0
+            except Exception:  # pragma: no cover - defensive parsing
+                pass
+        text = text.replace("h", "").replace("horas", "").replace("hora", "")
+        text = text.replace("~", "").replace(",", ".")
+        if "-" in text:
+            try:
+                parts = [float(p) for p in text.split("-") if p.strip()]
+                if parts:
+                    return sum(parts) / len(parts)
+            except Exception:
+                pass
+        match = re.search(r"(\d+(?:[\.,]\d+)?)", text)
+        if match:
+            try:
+                return float(match.group(1).replace(",", "."))
+            except ValueError:
+                continue
+    return None
 
-    with col_estrat:
-        st.markdown(
-            f"""
-            <div class="card">
-              <div class="card-title">Estratégia Nutricional</div>
-              <div class="kpi" style="font-size:18px">{estrategia_text}</div>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
 
-    st.markdown('<div class="two-col">', unsafe_allow_html=True)
+def _extract_numeric_from_sources(respostas: Dict[str, Any], payload: Dict[str, Any], keys: Iterable[str]) -> Optional[float]:
+    for key in keys:
+        if key in respostas:
+            value = _to_float(respostas.get(key))
+            if value is not None:
+                return value
+        if key in payload:
+            value = _to_float(payload.get(key))
+            if value is not None:
+                return value
+    return None
+
+
+def _calc_kcal_info(
+    peso: float,
+    goal: str,
+    treinado: bool,
+    respostas: Dict[str, Any],
+    payload: Dict[str, Any],
+) -> Dict[str, Any]:
+    explicit = _extract_numeric_from_sources(
+        respostas,
+        payload,
+        (
+            "tdee",
+            "get",
+            "gasto_energetico_total",
+            "gasto_energetico_tdee",
+            "calorias_alvo",
+        ),
+    )
+    perfil_key = "treinado" if treinado else "nao_treinado"
+    faixa = KCAL_TABLE[perfil_key][goal]
+    faixa_total = (peso * faixa[0], peso * faixa[1]) if peso else (0.0, 0.0)
+    alvo_default = peso * faixa[2] if peso else 0.0
+    alvo = explicit or alvo_default
+    source = "GET/TDEE informado" if explicit else f"{faixa[2]:.0f} kcal/kg"
+    return {
+        "target": max(0.0, alvo),
+        "target_display": _format_number(alvo),
+        "source": source,
+        "range_display": _format_range(faixa_total),
+        "per_kg": f"{faixa[0]:.0f}–{faixa[1]:.0f} kcal/kg",
+        "perfil": "Treinado" if treinado else "Não treinado",
+        "goal": goal,
+    }
+
+
+def _format_number(value: float) -> str:
+    if value <= 0:
+        return "—"
+    return f"{int(round(value)):,}".replace(",", ".")
+
+
+def _format_range(interval: Tuple[float, float]) -> str:
+    low, high = interval
+    if low <= 0 or high <= 0:
+        return "Sem dados"
+    return f"{int(round(low)):,} – {int(round(high)):,} kcal/dia".replace(",", ".")
+
+
+def _calc_hydration(peso: float, water: float, recomendado: float, urine_text: str) -> Dict[str, Any]:
+    urine_norm = _strip_accents(urine_text)
+    if any(term in urine_norm for term in ("transparente", "muito claro", "claro")):
+        level = "ok"
+    elif any(term in urine_norm for term in ("amarelo",)):
+        level = "attention"
+    elif any(term in urine_norm for term in ("escuro", "castanho")):
+        level = "critical"
+    else:
+        level = "attention"
+
+    threshold = peso * 0.03 if peso else 0.0
+    if threshold and water and water < threshold:
+        level = "critical" if level == "attention" else ("attention" if level == "ok" else level)
+
+    score = {"ok": 100, "attention": 70, "critical": 40}.get(level, 70)
+    message = {
+        "ok": "Boa hidratação. Mantenha água ao longo do dia.",
+        "attention": "Eleve o consumo de água e monitore a cor da urina.",
+        "critical": "Reforce a hidratação imediatamente e procure orientação se persistir.",
+    }[level]
+
+    label = {"ok": "Ótimo", "attention": "Atenção", "critical": "Crítico"}[level]
+    return {
+        "level": level,
+        "label": label,
+        "score": score,
+        "message": message,
+        "water": water,
+        "recommended": recomendado,
+    }
+
+
+def _calc_sleep(hours: Optional[float]) -> Dict[str, Any]:
+    if hours is None:
+        hours = 6.5
+        inferred = True
+    else:
+        inferred = False
+    if hours >= 7:
+        level = "ok"
+    elif hours >= 6:
+        level = "attention"
+    else:
+        level = "critical"
+    label = {"ok": "Ótimo", "attention": "Atenção", "critical": "Crítico"}[level]
+    score = {"ok": 100, "attention": 70, "critical": 40}[level]
+    message = {
+        "ok": "Sono reparador: mantenha rotina consistente.",
+        "attention": "Ajuste horários para atingir pelo menos 7h de sono.",
+        "critical": "Sono curto: priorize higiene do sono e repouso noturno.",
+    }[level]
+    return {
+        "level": level,
+        "label": label,
+        "score": score,
+        "hours": hours,
+        "message": message + (" (estimado)" if inferred else ""),
+    }
+
+
+def _calc_stress(respostas: Dict[str, Any], insights: Dict[str, Any]) -> Dict[str, Any]:
+    raw = respostas.get("estresse") or insights.get("estresse")
+    value = _to_float(raw)
+    if value is None:
+        value = 3
+    if value <= 2:
+        level = "ok"
+        label = "Baixo"
+        score = 90
+        message = "Continue praticando estratégias que preservam sua calma."
+    elif value == 3:
+        level = "attention"
+        label = "Médio"
+        score = 70
+        message = "Inclua pausas ativas e respiração para equilibrar o dia."
+    else:
+        level = "critical"
+        label = "Alto"
+        score = 45
+        message = "Estresse elevado: considere técnicas de relaxamento e apoio profissional."
+    return {
+        "level": level,
+        "label": label,
+        "score": score,
+        "value": value,
+        "message": message,
+    }
+
+
+def _calc_activity(respostas: Dict[str, Any], treinado: bool) -> Dict[str, Any]:
+    raw = respostas.get("nivel_atividade") or "Indefinido"
+    normalized = _strip_accents(str(raw))
+    if "sedent" in normalized:
+        level = "critical"
+        label = "Sedentário"
+        score = 45
+        message = "Inclua caminhadas leves e micro-movimentos ao longo do dia."
+    elif any(term in normalized for term in ("leve", "baixa")):
+        level = "attention"
+        label = "Leve"
+        score = 65
+        message = "Gradualmente aumente sessões estruturadas para mais adaptação."
+    elif any(term in normalized for term in ("moder", "media")):
+        level = "ok"
+        label = "Moderado"
+        score = 80
+        message = "Ótimo ritmo! Mantenha constância semanal."
+    elif any(term in normalized for term in ("intens", "alto", "treino")) or treinado:
+        level = "ok"
+        label = "Intenso"
+        score = 90
+        message = "Perfil treinado: ajuste recuperação e ingestão proteica."
+    else:
+        level = "attention"
+        label = raw if isinstance(raw, str) else "Indefinido"
+        score = 60
+        message = "Movimente-se diariamente para melhorar condicionamento."
+    return {
+        "level": level,
+        "label": label,
+        "score": score,
+        "message": message,
+    }
+
+
+def _calc_bmi(peso: float, altura_cm: float, insights: Dict[str, Any]) -> Dict[str, Any]:
+    imc = insights.get("bmi") or (peso / ((altura_cm / 100.0) ** 2) if peso and altura_cm else 0)
+    categoria, badge_color = _imc_category(imc)
+    score = {
+        SUCCESS: 100,
+        WARNING: 70,
+        CRITICAL: 45,
+    }.get(badge_color, 60)
+    message = {
+        "Peso normal": "IMC equilibrado. Foque em manter composição corporal.",
+        "Abaixo do peso": "Avalie ajustes calóricos e acompanhamento clínico.",
+        "Sobrepeso": "Ajuste calórico e atividade para reduzir gordura corporal.",
+        "Obesidade": "Plano supervisionado para perda gradual de peso é prioridade.",
+        "Indefinido": "Complete peso e altura para análise mais precisa.",
+    }[categoria]
+    return {
+        "value": imc,
+        "category": categoria,
+        "score": score,
+        "message": message,
+        "color": badge_color,
+    }
+
+
+def _general_health_score(scores: Iterable[int]) -> Tuple[int, str, str]:
+    values = [s for s in scores if isinstance(s, (int, float))]
+    if not values:
+        return 0, "Ajustar", CRITICAL
+    mean = int(round(sum(values) / len(values)))
+    if mean >= 80:
+        return mean, "Ótimo", SUCCESS
+    if mean >= 60:
+        return mean, "Atenção", WARNING
+    return mean, "Ajustar", CRITICAL
+
+
+def _build_recommendations(
+    hydration: Dict[str, Any],
+    sleep: Dict[str, Any],
+    stress: Dict[str, Any],
+    activity: Dict[str, Any],
+    bmi: Dict[str, Any],
+    state: str,
+) -> Tuple[str, str]:
+    suggestions: list[str] = []
+    if hydration["score"] < 80:
+        suggestions.append("Aumente ingestão hídrica e leve uma garrafa medida no dia a dia.")
+    if sleep["score"] < 80:
+        suggestions.append("Crie rotina de sono (luz baixa + alimentação leve à noite).")
+    if stress["score"] < 80:
+        suggestions.append("Inclua técnicas de respiração ou pausas ativas para reduzir estresse.")
+    if bmi["score"] < 80:
+        suggestions.append("Ajuste calorias e acompanhe medidas com apoio profissional.")
+    if activity["score"] < 80:
+        suggestions.append("Planeje treinos curtos porém frequentes (10–20 min/dia).")
+
+    if not suggestions:
+        suggestions.append("Continue consistente: hidratação + refeições equilibradas consolidam resultados.")
+    if len(suggestions) == 1:
+        if state == "S1":
+            suggestions.append("Libere o plano completo para estratégias personalizadas de longo prazo.")
+        else:
+            suggestions.append("Use o plano IA para variar cardápios e manter aderência.")
+    return suggestions[0], suggestions[1]
+
+
+def _format_timestamp(raw: Any) -> str:
+    if not raw:
+        return "—"
+    text = str(raw)
+    try:
+        dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
+        return dt.strftime("%d/%m/%Y %H:%M")
+    except Exception:  # pragma: no cover - defensive parse
+        return text
+
+
+# ---------------------------------------------------------------------------
+# Renderização (HTML/CSS)
+# ---------------------------------------------------------------------------
+
+
+def _inject_style() -> None:
     st.markdown(
         f"""
-        <div class="card">
-          <div class="card-title">Bristol (fezes)</div>
-          <div class="kpi" style="font-size:18px">Bristol</div>
-          <div class="sub">{bristol_tipo}</div>
+        <style>
+        :root {{
+            --primary: {PRIMARY};
+            --success: {SUCCESS};
+            --warning: {WARNING};
+            --critical: {CRITICAL};
+            --neutral: {NEUTRAL};
+        }}
+        .band {{
+            border-radius: 18px;
+            padding: 18px 22px;
+            margin-bottom: 18px;
+            background: linear-gradient(145deg, rgba(108,93,211,0.08), rgba(255,255,255,0.95));
+            border: 1px solid rgba(108,93,211,0.12);
+            box-shadow: 0 14px 32px rgba(108, 93, 211, 0.08);
+        }}
+        .band-header {{ display:flex; flex-wrap:wrap; gap:18px; align-items:center; }}
+        .pill {{
+            padding:6px 14px; border-radius:999px; font-weight:600; font-size:0.85rem;
+            background: rgba(108,93,211,0.12); color:{PRIMARY};
+        }}
+        .pill.s1 {{ background: rgba(244,162,97,0.18); color:{WARNING}; }}
+        .pill.s2 {{ background: rgba(40,180,135,0.18); color:{SUCCESS}; }}
+        .pill.s3 {{ background: rgba(231,111,81,0.18); color:{CRITICAL}; }}
+        .header-metric {{ font-size:0.95rem; color:#4a4a68; margin-right:18px; }}
+        .header-metric span {{ display:block; font-weight:700; color:#1f1f3d; font-size:1.05rem; }}
+        .kcal-card {{
+            border-radius:16px; padding:18px; background:#fff;
+            border:1px solid rgba(108,93,211,0.16);
+            box-shadow:0 10px 20px rgba(108,93,211,0.06);
+            margin-bottom:18px;
+        }}
+        .kcal-card h3 {{ margin:0; font-size:1rem; color:#2d2a44; }}
+        .kcal-card .value {{ font-size:2.2rem; font-weight:700; color:{PRIMARY}; margin:6px 0; }}
+        .kcal-card .meta {{ font-size:0.85rem; color:#5b5d7a; }}
+        .kpi-grid {{ display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:14px; }}
+        .kpi {{
+            background:#fff; border-radius:14px; border:1px solid rgba(108,93,211,0.12);
+            padding:14px; box-shadow:0 6px 14px rgba(108,93,211,0.04);
+        }}
+        .kpi .label {{ font-size:0.82rem; text-transform:uppercase; letter-spacing:0.08em; color:#7a7c9f; }}
+        .kpi .value {{ font-size:1.4rem; font-weight:700; margin-top:6px; color:#1f1f3d; }}
+        .kpi .sub {{ font-size:0.85rem; color:#5b5d7a; margin-top:4px; }}
+        .kpi.ok {{ border-left:4px solid {SUCCESS}; }}
+        .kpi.attention {{ border-left:4px solid {WARNING}; }}
+        .kpi.critical {{ border-left:4px solid {CRITICAL}; }}
+        .kpi.neutral {{ border-left:4px solid {PRIMARY}; }}
+        .score-card {{
+            background:#fff; border-radius:18px; border:1px solid rgba(108,93,211,0.18);
+            padding:22px; box-shadow:0 18px 32px rgba(108,93,211,0.08);
+        }}
+        .score-card .score {{ font-size:3rem; font-weight:800; color:{PRIMARY}; margin:0; }}
+        .score-badge {{
+            display:inline-block; padding:4px 12px; border-radius:999px; font-weight:600; font-size:0.85rem;
+        }}
+        .score-badge.ok {{ background: rgba(40,180,135,0.14); color:{SUCCESS}; }}
+        .score-badge.attention {{ background: rgba(244,162,97,0.16); color:{WARNING}; }}
+        .score-badge.critical {{ background: rgba(231,111,81,0.16); color:{CRITICAL}; }}
+        .score-card ul {{ padding-left:18px; margin:12px 0 0 0; color:#4c4f6b; }}
+        .mini-grid {{ display:grid; grid-template-columns:repeat(auto-fit, minmax(180px, 1fr)); gap:14px; }}
+        .mini-card {{ background:#fff; border-radius:14px; padding:16px; border:1px solid rgba(108,93,211,0.1); box-shadow:0 6px 14px rgba(108,93,211,0.04); }}
+        .mini-card h4 {{ margin:0 0 8px 0; font-size:1rem; color:#2d2a44; }}
+        .mini-card p {{ margin:0; font-size:0.9rem; color:#565778; }}
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Renderização de seções
+# ---------------------------------------------------------------------------
+
+
+def _render_header(state_info: Dict[str, str], pac_id: str, payload: Dict[str, Any]) -> None:
+    updated_at = _format_timestamp(payload.get("updated_at"))
+    created_at = _format_timestamp(payload.get("created_at"))
+    state = state_info["state"].lower()
+    pac_short = pac_id[:8] if pac_id else "—"
+    st.markdown(
+        f"""
+        <div class='band band-header'>
+            <div class='pill s{state}'>{'Pendente' if state=='s1' else ('Pago' if state=='s2' else 'Erro IA')}</div>
+            <div class='header-metric'>Pac ID<br><span>{html.escape(pac_short)}</span></div>
+            <div class='header-metric'>Atualizado em<br><span>{html.escape(updated_at)}</span></div>
+            <div class='header-metric'>Criado em<br><span>{html.escape(created_at)}</span></div>
         </div>
         """,
         unsafe_allow_html=True,
     )
-    st.markdown(
-        f"""
-        <div class="card">
-          <div class="card-title">Cor da urina</div>
-          <div class="kpi" style="font-size:18px">Cor</div>
-          <div class="sub">{cor_urina}</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-    st.markdown('</div>', unsafe_allow_html=True)
 
-    chips = "".join([f"<span>{item}</span>" for item in comportamentos]) or '<span style="color:#718096;">Sem itens cadastrados.</span>'
+
+def _render_kcal_card(info: Dict[str, Any]) -> None:
+    goal_label = {
+        "emagrecer": "Emagrecimento",
+        "manter": "Manutenção",
+        "ganhar": "Ganho de massa",
+    }[info["goal"]]
     st.markdown(
         f"""
-        <div class="card">
-          <div class="card-title">Comportamento</div>
-          <div class="card" style="background:#fbfcfd;border:1px dashed #e6ebef;">
-            <div class="chips">{chips}</div>
-          </div>
+        <div class='kcal-card'>
+            <h3>Kcal de bolso · {html.escape(info['perfil'])} · {html.escape(goal_label)}</h3>
+            <div class='value'>{html.escape(info['target_display'])} kcal/dia</div>
+            <div class='meta'>Faixa sugerida: {html.escape(info['range_display'])} · Base: {html.escape(info['per_kg'])} · Fonte: {html.escape(info['source'])}</div>
         </div>
         """,
         unsafe_allow_html=True,
     )
 
 
-def _render_charts(respostas: Dict[str, Any], insights: Dict[str, Any]) -> None:
-    peso = float(respostas.get("peso") or 0.0)
-    altura_cm = float(respostas.get("altura") or 0.0)
-    altura_m = round(altura_cm / 100.0, 2) if altura_cm else 0.0
-
-    consumo = insights.get("consumption", {})
-    consumo_real = float(consumo.get("water_liters") or 0.0)
-    recomendado = float(consumo.get("recommended_liters") or 0.0)
-
-    colA, colB = st.columns(2, gap="medium")
-    with colA:
-        fig_imc, categoria_imc = plot_imc_horizontal(insights.get("bmi") or 0.0)
-        has_imc = (insights.get("bmi") or 0.0) > 0
-        categoria_display = categoria_imc if has_imc else "Indisponível"
-        st.markdown('<div class="card"><div class="card-title">IMC</div>', unsafe_allow_html=True)
-        st.plotly_chart(fig_imc, use_container_width=True, config={"displayModeBar": False})
-        imc_text = f"{insights.get('bmi', 0.0):.1f}" if has_imc else "--"
-        peso_text = f"{peso:.1f} kg" if peso else "--"
-        altura_text = f"{altura_m:.2f} m" if altura_m else "--"
-        st.markdown(
-            f"<div class='sub'><b>Categoria:</b> {categoria_display} &nbsp; "
-            f"<b>IMC:</b> {imc_text} &nbsp; <b>Peso:</b> {peso_text} &nbsp; "
-            f"<b>Altura:</b> {altura_text}</div></div>",
-            unsafe_allow_html=True,
+def _render_kpis(kpis: Iterable[Dict[str, str]]) -> None:
+    blocks = []
+    for item in kpis:
+        blocks.append(
+            f"<div class='kpi {item['status']}'><div class='label'>{html.escape(item['label'])}</div>"
+            f"<div class='value'>{html.escape(item['value'])}</div>"
+            f"<div class='sub'>{html.escape(item['sub'])}</div></div>"
         )
+    st.markdown(f"<div class='kpi-grid'>{''.join(blocks)}</div>", unsafe_allow_html=True)
 
-    with colB:
-        fig_agua = plot_agua(consumo_real, recomendado)
-        st.markdown('<div class="card"><div class="card-title">Hidratação</div>', unsafe_allow_html=True)
-        st.plotly_chart(fig_agua, use_container_width=True, config={"displayModeBar": False})
-        ok = recomendado and consumo_real >= recomendado
-        badge = (
-            '<span style="background:#e8f7ef;color:#127a46;padding:2px 8px;border-radius:999px;font-size:12px">Meta atingida</span>'
-            if ok
-            else '<span style="background:#fff5e6;color:#8a5200;padding:2px 8px;border-radius:999px;font-size:12px">Abaixo do ideal</span>'
+
+def _render_health_score(score: int, badge: str, badge_color: str, rec1: str, rec2: str) -> None:
+    badge_class = "ok" if badge_color == SUCCESS else ("critical" if badge_color == CRITICAL else "attention")
+    st.markdown(
+        f"""
+        <div class='score-card'>
+            <div class='score'>{score}</div>
+            <span class='score-badge {badge_class}'>{html.escape(badge)}</span>
+            <ul>
+                <li>{html.escape(rec1)}</li>
+                <li>{html.escape(rec2)}</li>
+            </ul>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _render_interpretations(cards: Iterable[Tuple[str, str]]) -> None:
+    blocks = []
+    for title, body in cards:
+        blocks.append(
+            f"<div class='mini-card'><h4>{html.escape(title)}</h4><p>{html.escape(body)}</p></div>"
         )
-        st.markdown(f'<div class="sub">{badge}</div></div>', unsafe_allow_html=True)
+    st.markdown(f"<div class='mini-grid'>{''.join(blocks)}</div>", unsafe_allow_html=True)
 
 
-def _render_plan_sections(plan: Dict[str, Any], compacto: Dict[str, Any], macros: Dict[str, Any]) -> None:
-    if compacto:
-        st.subheader("Plano alimentar — resumo")
-        st.json(compacto)
+# ---------------------------------------------------------------------------
+# Plano alimentar e ações
+# ---------------------------------------------------------------------------
 
-    if plan:
-        with st.expander("Plano alimentar completo"):
-            st.json(plan)
 
-    if macros:
-        st.subheader("Distribuição de macronutrientes")
-        items = list(macros.items())
-        cols = st.columns(len(items)) if items else []
-        for col, (key, value) in zip(cols, items):
-            label = key.replace("_", " ").title()
-            if isinstance(value, float):
-                display = f"{value:.2f}"
+def _render_actions(
+    state: str,
+    pac_id: str,
+    insights: Dict[str, Any],
+    payload: Dict[str, Any],
+    pdf_bytes: bytes,
+    share_bytes: bytes,
+) -> None:
+    if state == "S1":
+        cols = st.columns(3, gap="medium")
+        payment_url = payload.get("payment_url") or payload.get("checkout_url")
+        with cols[0]:
+            if payment_url:
+                st.link_button("Liberar Plano Completo", payment_url, type="primary")
             else:
-                display = f"{value}"
-            col.metric(label, display)
+                if st.button("Liberar Plano Completo", type="primary"):
+                    _redirect_to_form(pac_id)
+        with cols[1]:
+            st.download_button(
+                "PDF Resumo",
+                data=pdf_bytes,
+                file_name=f"nutrisigno_{pac_id[:8]}_resumo.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+            )
+        with cols[2]:
+            st.download_button(
+                "Compartilhar resultado",
+                data=share_bytes,
+                file_name=f"nutrisigno_{pac_id[:8]}_share.png",
+                mime="image/png",
+                use_container_width=True,
+            )
+        return
+
+    cols = st.columns(4, gap="medium")
+    with cols[0]:
+        if st.button("Plano IA", type="primary"):
+            st.toast("Confira a aba 'Cardápio base' logo abaixo.")
+    with cols[1]:
+        if st.button("Substituições ±2%"):
+            st.toast("Veja a aba de substituições para trocas inteligentes.")
+    with cols[2]:
+        pdf_completo = payload.get("pdf_completo_url") or payload.get("pdf_url_completo")
+        if pdf_completo:
+            st.link_button("PDF Completo", pdf_completo)
+        else:
+            st.download_button(
+                "PDF Completo (resumo)",
+                data=pdf_bytes,
+                file_name=f"nutrisigno_{pac_id[:8]}_completo.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+            )
+    with cols[3]:
+        st.download_button(
+            "Compartilhar resultado",
+            data=share_bytes,
+            file_name=f"nutrisigno_{pac_id[:8]}_share.png",
+            mime="image/png",
+            use_container_width=True,
+        )
 
 
 def _redirect_to_form(pac_id: str) -> None:
@@ -330,9 +814,63 @@ def _redirect_to_form(pac_id: str) -> None:
             st.stop()
 
 
+def _render_plan_sections(
+    state: str,
+    respostas: Dict[str, Any],
+    plan: Dict[str, Any],
+) -> None:
+    if state == "S1":
+        st.info("Plano IA liberado após confirmação de pagamento.")
+        return
+    if state == "S3":
+        st.error("Não conseguimos gerar o Plano IA automaticamente neste momento.")
+        if st.button("Tentar novamente", type="primary"):
+            st.toast("Solicitação reenviada para nossa equipe. Tente novamente em instantes.")
+        return
+
+    st.markdown("### Plano IA e Substituições")
+    diet = plan.get("diet", {}) if isinstance(plan, dict) else {}
+    meals = diet.get("meals") if isinstance(diet, dict) else []
+    substitutions = diet.get("substitutions") if isinstance(diet, dict) else {}
+    hydration_note = diet.get("hydration") if isinstance(diet, dict) else None
+
+    tabs = st.tabs(["Cardápio base", "Substituições ±2%", "Notas"])
+    with tabs[0]:
+        if not meals:
+            st.info("Plano IA indisponível no momento. Tente novamente mais tarde.")
+        for meal in meals or []:
+            title = meal.get("title") or "Refeição"
+            kcal = meal.get("kcal")
+            items = meal.get("items") or []
+            header = f"{title} — {kcal} kcal" if kcal else title
+            with st.expander(header, expanded=False):
+                for item in items:
+                    st.markdown(f"- {item}")
+    with tabs[1]:
+        if not substitutions:
+            st.info("Substituições serão liberadas junto com o plano completo.")
+        else:
+            for refeicao, itens in substitutions.items():
+                st.markdown(f"**{refeicao}**")
+                for opcao in itens:
+                    st.markdown(f"- {opcao}")
+    with tabs[2]:
+        st.metric("Macro Split", "Indefinido")
+        if hydration_note:
+            st.markdown(f"- 💧 {hydration_note}")
+        st.markdown(
+            "- Utilize o plano como guia educativo; ajustes clínicos exigem acompanhamento profissional."
+        )
+
+
+# ---------------------------------------------------------------------------
+# Função principal
+# ---------------------------------------------------------------------------
+
+
 def main() -> None:
     app_bootstrap.ensure_bootstrap()
-    st.set_page_config(page_title="Dashboard", page_icon="📊", layout="wide")
+    st.set_page_config(page_title="Meu Resultado", page_icon="📊", layout="wide")
 
     pac_id = _resolve_pac_id()
     if not pac_id:
@@ -351,43 +889,118 @@ def main() -> None:
 
     respostas = st.session_state.get("data") or payload.get("respostas") or {}
     plan = st.session_state.get("plan") or payload.get("plano_alimentar") or {}
-    compacto = st.session_state.get("plano_compacto") or payload.get("plano_alimentar_compacto") or {}
-    macros = st.session_state.get("macros") or payload.get("macros") or {}
 
-    st.title("📊 Painel personalizado")
-    st.caption("Todos os seus dados consolidados em um único lugar.")
-    st.info(f"Identificador do paciente: `{pac_id}`")
+    _inject_style()
+
+    st.title("📊 Resultado NutriSigno")
+    st.caption("Acompanhe métricas-chave e próximos passos do seu plano.")
 
     insights, ai_summary = _prepare_insights(respostas)
 
-    _render_personal_header(respostas, insights)
-    _render_charts(respostas, insights)
+    state_info = _resolve_status(payload)
+    _render_header(state_info, pac_id, payload)
 
-    with st.expander("Resumo dos insights"):
-        st.write(ai_summary)
+    peso = float(respostas.get("peso") or 0.0)
+    altura_cm = float(respostas.get("altura") or 0.0)
+    goal = _infer_goal(respostas)
+    treinado = _is_trained(respostas)
 
-    col1, col2 = st.columns(2)
-    with col1:
-        st.download_button(
-            "Exportar PDF",
-            data=build_insights_pdf_bytes(insights),
-            file_name="insights.pdf",
-            mime="application/pdf",
-        )
-    with col2:
-        st.download_button(
-            "Baixar imagem",
-            data=build_share_png_bytes(insights),
-            file_name="insights.png",
-            mime="image/png",
-        )
+    kcal_info = _calc_kcal_info(peso, goal, treinado, respostas, payload)
+    _render_kcal_card(kcal_info)
 
-    if st.button("Gerar plano nutricional e prosseguir para pagamento"):
-        _redirect_to_form(pac_id)
+    bmi = _calc_bmi(peso, altura_cm, insights)
+    water_value = _to_float(insights.get("consumption", {}).get("water_liters"))
+    if water_value is None:
+        water_value = _to_float(respostas.get("consumo_agua")) or 0.0
+    recommended_value = _to_float(insights.get("consumption", {}).get("recommended_liters"))
+    if recommended_value is None:
+        recommended_value = max(1.5, peso * 0.035)
+    hydration = _calc_hydration(
+        peso,
+        water_value,
+        recommended_value,
+        extract_cor_urina(respostas.get("cor_urina"), insights.get("urine", "")),
+    )
+    sleep = _calc_sleep(_extract_sleep_hours(respostas))
+    stress = _calc_stress(respostas, insights)
+    activity = _calc_activity(respostas, treinado)
 
-    _render_plan_sections(plan, compacto, macros)
+    kpis = [
+        {
+            "label": "Kcal alvo",
+            "value": f"{kcal_info['target_display']} kcal",
+            "sub": f"Fonte: {kcal_info['source']}",
+            "status": "neutral",
+        },
+        {
+            "label": "IMC",
+            "value": f"{bmi['value']:.1f}" if bmi["value"] else "—",
+            "sub": bmi["category"],
+            "status": "ok" if bmi["category"] == "Peso normal" else ("critical" if bmi["category"] == "Obesidade" else "attention"),
+        },
+        {
+            "label": "Hidratação",
+            "value": hydration["label"],
+            "sub": f"{hydration['water']:.1f} L / {hydration['recommended']:.1f} L",
+            "status": hydration["level"],
+        },
+        {
+            "label": "Sono (h)",
+            "value": f"{sleep['hours']:.1f} h",
+            "sub": sleep["label"],
+            "status": sleep["level"],
+        },
+        {
+            "label": "Estresse",
+            "value": f"{stress['label']} ({stress['value']:.0f}/5)",
+            "sub": "Autoavaliação",
+            "status": stress["level"],
+        },
+        {
+            "label": "Atividade",
+            "value": activity["label"],
+            "sub": "Perfil diário",
+            "status": activity["level"],
+        },
+    ]
+    _render_kpis(kpis)
 
-    st.page_link("pages/0_Acessar_Resultados.py", label="Reacessar resultados", icon="🔁")
+    score, badge, badge_color = _general_health_score(
+        [hydration["score"], sleep["score"], stress["score"], activity["score"], bmi["score"]]
+    )
+    rec1, rec2 = _build_recommendations(hydration, sleep, stress, activity, bmi, state_info["state"])
+    _render_health_score(score, badge, badge_color, rec1, rec2)
+
+    bristol_label = extract_bristol_tipo(respostas.get("tipo_fezes"), insights.get("bristol", ""))
+    bristol_norm = _strip_accents(bristol_label)
+    if any(term in bristol_norm for term in ("tipo 3", "tipo 4")):
+        bristol_message = "Eliminação adequada; mantenha fibras variadas e hidratação."
+    elif any(term in bristol_norm for term in ("tipo 1", "tipo 2")):
+        bristol_message = "Fezes ressecadas: aumente água, frutas e fibras solúveis."
+    elif any(term in bristol_norm for term in ("tipo 5", "tipo 6", "tipo 7")):
+        bristol_message = "Fezes moles: priorize alimentos adstringentes e avalie intolerâncias."
+    else:
+        bristol_message = insights.get("bristol", "Monitore sua digestão com atenção.")
+
+    interpretations = [
+        ("Urina", hydration["message"]),
+        ("Fezes (Bristol)", bristol_message),
+        ("Sono", sleep["message"]),
+        ("Atividade", activity["message"]),
+    ]
+    _render_interpretations(interpretations)
+
+    pdf_bytes = build_insights_pdf_bytes(insights)
+    share_bytes = build_share_png_bytes(insights)
+    _render_actions(state_info["state"], pac_id, insights, payload, pdf_bytes, share_bytes)
+
+    if state_info["state"] != "S1" and ai_summary:
+        with st.expander("Resumo IA (educativo)"):
+            st.write(ai_summary)
+
+    _render_plan_sections(state_info["state"], respostas, plan)
+
+    st.caption("Compartilhe apenas com pessoas de confiança. NutriSigno é um apoio educativo, não substitui acompanhamento clínico.")
 
 
 if __name__ == "__main__":
