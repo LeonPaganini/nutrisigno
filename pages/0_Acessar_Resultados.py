@@ -6,10 +6,24 @@ from datetime import datetime
 import logging
 import streamlit as st
 
+from modules.client_state import get_user_cached, load_client_state, save_client_state
 from modules.repo import get_by_phone_dob, list_recent_patients
 from modules.db import engine
 
 log = logging.getLogger(__name__)
+
+pac_id_cached, step_cached = load_client_state()
+if pac_id_cached:
+    if "pac_id" not in st.session_state:
+        st.session_state.pac_id = pac_id_cached
+    payload_cached = get_user_cached(pac_id_cached)
+    if payload_cached:
+        st.session_state.paciente_data = payload_cached
+        if step_cached:
+            try:
+                st.session_state.step = max(1, int(str(step_cached)))
+            except Exception:  # pragma: no cover - defensive
+                pass
 
 # ---------------------------------------------------------------------
 # Helpers inline (sem criar módulos extras)
@@ -70,6 +84,16 @@ if submitted:
 
         if user:
             st.success("Cadastro encontrado.")
+            pac_id_found = user.get("pac_id")
+            st.session_state.pac_id = pac_id_found
+            st.session_state.paciente_data = user
+            step_to_persist = st.session_state.get("step")
+            if pac_id_found:
+                save_client_state(
+                    pac_id_found,
+                    str(step_to_persist) if step_to_persist else None,
+                )
+                get_user_cached(pac_id_found)
             # Exibição mínima para validação — ajuste conforme seu layout do Dashboard
             with st.expander("Dados brutos do cadastro (debug)"):
                 st.json(user, expanded=False)
