@@ -13,4 +13,5 @@ __all__: list[str] = [
     "pdf_generator",
     "dashboard_utils",
     "email_utils",
+    "plan_post_payment",
 ]

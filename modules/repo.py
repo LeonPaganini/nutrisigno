@@ -52,10 +52,23 @@ class Patient(Base):
     plano_compacto: Mapped[dict] = mapped_column(JSON_TYPE, nullable=False, default=dict)
     macros:         Mapped[dict] = mapped_column(JSON_TYPE, nullable=False, default=dict)
 
+    # Estados e resultados pós-pagamento
+    status_pagamento: Mapped[str] = mapped_column(Text, nullable=False, default="pendente")
+    status_plano:     Mapped[str] = mapped_column(Text, nullable=False, default="nao_gerado")
+    plano_ia:         Mapped[dict] = mapped_column(JSON_TYPE, nullable=False, default=dict)
+    substituicoes:    Mapped[dict] = mapped_column(JSON_TYPE, nullable=False, default=dict)
+    cardapio_ia:      Mapped[dict] = mapped_column(JSON_TYPE, nullable=False, default=dict)
+    pdf_completo_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
     status: Mapped[str] = mapped_column(Text, nullable=False, default="pendente_validacao")
 
     created_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, server_default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        TIMESTAMP(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
 
 
 # -----------------------------------------------------------------------------
@@ -300,8 +313,65 @@ def get_by_pac_id(pac_id: str) -> Optional[Dict[str, Any]]:
             "plano_alimentar_compacto": obj.plano_compacto,
             "macros": obj.macros,
             "status": obj.status,
+            "status_pagamento": obj.status_pagamento,
+            "status_plano": obj.status_plano,
+            "plano_ia": obj.plano_ia,
+            "substituicoes": obj.substituicoes,
+            "cardapio_ia": obj.cardapio_ia,
+            "pdf_completo_url": obj.pdf_completo_url,
             "updated_at": obj.updated_at.isoformat() if obj.updated_at else None,
+            "created_at": obj.created_at.isoformat() if obj.created_at else None,
         }
+
+
+# -----------------------------------------------------------------------------
+# Atualizações pós-pagamento
+# -----------------------------------------------------------------------------
+def update_payment_status(pac_id: str, status: str) -> bool:
+    """Atualiza status_pagamento do paciente."""
+
+    status_norm = (status or "").strip().lower() or "pendente"
+    with session_scope() as s:
+        obj = s.get(Patient, pac_id)
+        if not obj:
+            return False
+        obj.status_pagamento = status_norm
+        return True
+
+
+def save_plan_generation_result(
+    pac_id: str,
+    *,
+    plano_ia: Dict[str, Any],
+    substituicoes: Dict[str, Any],
+    cardapio_ia: Dict[str, Any],
+    pdf_completo_url: str | None,
+    status_plano: str = "disponivel",
+) -> bool:
+    """Persiste os dados resultantes do pós-pagamento."""
+
+    with session_scope() as s:
+        obj = s.get(Patient, pac_id)
+        if not obj:
+            return False
+
+        obj.status_plano = (status_plano or "disponivel").strip().lower()
+        obj.plano_ia = _json_safe(plano_ia or {})
+        obj.substituicoes = _json_safe(substituicoes or {})
+        obj.cardapio_ia = _json_safe(cardapio_ia or {})
+        obj.pdf_completo_url = pdf_completo_url
+        return True
+
+
+def mark_plan_error(pac_id: str, status_plano: str = "erro") -> bool:
+    """Marca status_plano como erro (utilizado após falhas repetidas)."""
+
+    with session_scope() as s:
+        obj = s.get(Patient, pac_id)
+        if not obj:
+            return False
+        obj.status_plano = (status_plano or "erro").strip().lower()
+        return True
 
 
 # -----------------------------------------------------------------------------
