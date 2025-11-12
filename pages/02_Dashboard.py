@@ -14,7 +14,13 @@ import streamlit as st
 from modules import app_bootstrap, openai_utils, repo
 from modules.client_state import get_user_cached, load_client_state, save_client_state
 from modules.form.exporters import build_insights_pdf_bytes, build_share_png_bytes
-from modules.form.ui_insights import extract_bristol_tipo, extract_cor_urina
+from modules.form.ui_insights import (
+    element_icon,
+    extract_bristol_tipo,
+    extract_cor_urina,
+    signo_elemento,
+    signo_symbol,
+)
 
 log = logging.getLogger(__name__)
 
@@ -235,6 +241,138 @@ KCAL_TABLE = {
         "manter": (31, 35, 33),
         "ganhar": (36, 40, 38),
     },
+}
+
+
+ELEMENT_BEHAVIOR = {
+    "Terra": (
+        "Construa rotina previsível com horários fixos de refeição.",
+        "Planeje compras e pré-preparo no fim de semana.",
+    ),
+    "Ar": (
+        "Varie formatos de refeições para evitar monotonia.",
+        "Use lembretes digitais para não perder horários.",
+    ),
+    "Fogo": (
+        "Transforme metas em desafios rápidos para manter engajamento.",
+        "Inclua refeições âncora antes de compromissos intensos.",
+    ),
+    "Água": (
+        "Crie rituais acolhedores nas refeições para sustentar hábito.",
+        "Monitore sinais corporais e ajuste porções gradualmente.",
+    ),
+}
+
+
+SIGN_BEHAVIOR = {
+    "aries": (
+        "Use metas semanais mensuráveis para canalizar impulso.",
+        "Respire antes de comer em pressa para evitar excessos.",
+    ),
+    "touro": (
+        "Valorize texturas nutritivas que tragam saciedade sem exagero.",
+        "Troque conforto emocional por versões leves planejadas.",
+    ),
+    "gemeos": (
+        "Alterne cardápios rápidos e novos para não perder foco.",
+        "Combine refeições com conversas estruturadas para evitar distrações.",
+    ),
+    "cancer": (
+        "Prepare refeições caseiras que transmitam segurança digestiva.",
+        "Organize lanches leves para lidar com gatilhos noturnos.",
+    ),
+    "leao": (
+        "Celebre progressos com registros visuais em vez de excessos.",
+        "Planeje destaque nutricional diurno para evitar volume à noite.",
+    ),
+    "virgem": (
+        "Checklist de ingredientes ajuda a manter padrão limpo.",
+        "Cuidado com perfeccionismo: aceite ajustes simples ao plano.",
+    ),
+    "libra": (
+        "Decida cardápio da semana para reduzir indecisão diária.",
+        "Ancore refeições com companhia equilibrada sem ceder a pressões.",
+    ),
+    "escorpiao": (
+        "Canalize intensidade criando metas nutricionais discretas.",
+        "Evite extremos; prefira porções estáveis e variadas.",
+    ),
+    "sagitario": (
+        "Planeje refeições portáteis para rotinas dinâmicas.",
+        "Revise porções em dias festivos para manter direção.",
+    ),
+    "capricornio": (
+        "Bloqueie refeições no calendário como compromissos.",
+        "Permita flexibilidade controlada para evitar rigidez.",
+    ),
+    "aquario": (
+        "Experimente receitas funcionais mantendo base nutritiva.",
+        "Use comunidades online para reforçar compromisso saudável.",
+    ),
+    "peixes": (
+        "Use playlists ou aromas para lembrar refeições equilibradas.",
+        "Estabeleça limites claros para beliscos emocionais.",
+    ),
+}
+
+
+SIGN_ACTIONS = {
+    "aries": "Inicie o dia com {goal_focus} e registre vitórias rápidas.",
+    "touro": "Organize refeições prazerosas e leves para sustentar {goal_focus}.",
+    "gemeos": "Alterne receitas simples e novas mantendo {goal_focus}.",
+    "cancer": "Monte refeição caseira-base que segure {goal_focus}.",
+    "leao": "Planeje pratos destaque sem sair de {goal_focus}.",
+    "virgem": "Prepare lotes organizados no domingo focando em {goal_focus}.",
+    "libra": "Decida cardápio-binário (A/B) semanal para proteger {goal_focus}.",
+    "escorpiao": "Defina metas discretas pós-refeição para manter {goal_focus}.",
+    "sagitario": "Monte kit portátil nutritivo para seguir com {goal_focus}.",
+    "capricornio": "Agende refeições no calendário como tarefas de {goal_focus}.",
+    "aquario": "Teste combinações funcionais mantendo {goal_focus} estável.",
+    "peixes": "Crie ritual sensorial antes das refeições para nutrir {goal_focus}.",
+}
+
+
+GOAL_DIRECTIVES = {
+    "emagrecer": "Para emagrecer, fixe 3 refeições âncora e lanches proteicos.",
+    "manter": "Para manter, consolide horários estáveis e monitore porções.",
+    "ganhar": "Para ganhar, adicione lanches densos em proteína e calorias.",
+}
+
+
+GOAL_FOCUS = {
+    "emagrecer": "o déficit leve",
+    "manter": "o equilíbrio diário",
+    "ganhar": "o superávit nutritivo",
+}
+
+
+GOAL_ACTIVITY_FOCUS = {
+    "emagrecer": "o déficit leve",
+    "manter": "o equilíbrio",
+    "ganhar": "o superávit inteligente",
+}
+
+
+GOAL_RECOVERY = {
+    "emagrecer": "o ritmo metabólico",
+    "manter": "o equilíbrio metabólico",
+    "ganhar": "a recuperação muscular",
+}
+
+
+CTA_TEXT = {
+    "S1": "Desbloqueie seu Plano Completo com cardápios e substituições.",
+    "S2": "Veja seu Plano IA e gere o PDF completo.",
+    "S3": "Veja seu Plano IA e gere o PDF completo.",
+}
+
+
+FOCUS_STEPS = {
+    "Hidratação": "ajuste ingestão hídrica com metas por garrafa.",
+    "Sono": "estabeleça ritual relaxante 30 min antes de dormir.",
+    "Estresse": "programar pausas de respiração durante o dia.",
+    "Atividade": "estruturar microtreinos progressivos na agenda.",
+    "IMC": "seguir plano alimentar monitorando medidas semanais.",
 }
 
 
@@ -497,6 +635,10 @@ def _calc_activity(respostas: Dict[str, Any], treinado: bool) -> Dict[str, Any]:
     }
 
 
+def _normalize_sign_name(sign: Optional[str]) -> str:
+    return _strip_accents(sign or "").lower()
+
+
 def _calc_bmi(peso: float, altura_cm: float, insights: Dict[str, Any]) -> Dict[str, Any]:
     imc = insights.get("bmi") or (peso / ((altura_cm / 100.0) ** 2) if peso and altura_cm else 0)
     categoria, badge_color = _imc_category(imc)
@@ -645,6 +787,22 @@ def _inject_style() -> None:
         .mini-card {{ background:#fff; border-radius:14px; padding:16px; border:1px solid rgba(108,93,211,0.1); box-shadow:0 6px 14px rgba(108,93,211,0.04); }}
         .mini-card h4 {{ margin:0 0 8px 0; font-size:1rem; color:#2d2a44; }}
         .mini-card p {{ margin:0; font-size:0.9rem; color:#565778; }}
+        .behavior-grid {{ display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:16px; margin:18px 0; }}
+        .behavior-card {{
+            background:#fff; border-radius:18px; border:1px solid rgba(108,93,211,0.12);
+            padding:18px; box-shadow:0 14px 28px rgba(108,93,211,0.08);
+            display:flex; flex-direction:column; gap:10px;
+        }}
+        .behavior-card .card-icon {{
+            width:48px; height:48px; border-radius:14px; background:rgba(108,93,211,0.12);
+            display:flex; align-items:center; justify-content:center; font-size:1.6rem; color:{PRIMARY}; gap:6px;
+        }}
+        .behavior-card .card-title {{ font-weight:700; font-size:0.95rem; color:#2d2a44; }}
+        .behavior-card .card-subtitle {{ font-size:0.82rem; color:#6b6d86; text-transform:uppercase; letter-spacing:0.08em; }}
+        .behavior-card ul {{ margin:0; padding-left:18px; color:#4a4c66; font-size:0.9rem; display:flex; flex-direction:column; gap:6px; }}
+        .behavior-card li {{ margin:0; line-height:1.35; }}
+        .behavior-card .card-cta {{ margin:4px 0 0 0; font-size:0.82rem; color:{PRIMARY}; font-weight:600; }}
+        .behavior-card .card-note {{ margin:0; font-size:0.82rem; color:#4b4d6a; }}
         </style>
         """,
         unsafe_allow_html=True,
@@ -714,6 +872,210 @@ def _render_health_score(score: int, badge: str, badge_color: str, rec1: str, re
                 <li>{html.escape(rec1)}</li>
                 <li>{html.escape(rec2)}</li>
             </ul>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _build_behavior_card_content(sign: Optional[str], goal: str) -> Dict[str, Any]:
+    element = signo_elemento(sign or "")
+    element_bullets = ELEMENT_BEHAVIOR.get(
+        element,
+        (
+            "Fortaleça rotina alimentar com pequenos rituais diários.",
+            "Use lembretes simples para manter constância.",
+        ),
+    )
+    sign_key = _normalize_sign_name(sign)
+    sign_bullets = SIGN_BEHAVIOR.get(
+        sign_key,
+        (
+            "Adote registro rápido das refeições para manter foco.",
+            "Observe gatilhos de excesso e prepare alternativas leves.",
+        ),
+    )
+    goal_bullet = GOAL_DIRECTIVES.get(goal, GOAL_DIRECTIVES["manter"])
+    return {
+        "symbol": signo_symbol(sign or ""),
+        "element": element or "—",
+        "element_icon": element_icon(element or ""),
+        "bullets": [*element_bullets, *sign_bullets, goal_bullet],
+    }
+
+
+def _habit_activity_line(activity: Dict[str, Any], goal: str) -> str:
+    level = activity.get("level")
+    label = str(activity.get("label") or "atividade")
+    focus = GOAL_ACTIVITY_FOCUS.get(goal, GOAL_ACTIVITY_FOCUS["manter"])
+    if level == "critical":
+        return f"Programe 3 caminhadas de 15' na semana para ativar {focus}."
+    if level == "attention":
+        return f"Confirme 2 treinos guiados/semana para reforçar {focus}."
+    if level == "ok":
+        return f"Mantenha {label.lower()} e ajuste cargas para sustentar {focus}."
+    return f"Movimente-se diariamente para proteger {focus}."
+
+
+def _habit_recovery_line(sleep: Dict[str, Any], stress: Dict[str, Any], goal: str) -> str:
+    sleep_level = sleep.get("level")
+    stress_level = stress.get("level")
+    focus = GOAL_RECOVERY.get(goal, GOAL_RECOVERY["manter"])
+    if sleep_level == "critical":
+        return f"Crie ritual sem telas 20' antes de dormir para proteger {focus}."
+    if sleep_level == "attention":
+        return f"Defina horário fixo de sono e luz baixa para garantir {focus}."
+    if stress_level == "critical":
+        return f"Pratique respiração 4-7-8 após refeições para estabilizar {focus}."
+    if stress_level == "attention":
+        return f"Planeje pausas de respiração profunda para sustentar {focus}."
+    return f"Mantenha pausas e sono regular para cuidar de {focus}."
+
+
+def _build_habit_suggestions(
+    sign: Optional[str],
+    goal: str,
+    activity: Dict[str, Any],
+    sleep: Dict[str, Any],
+    stress: Dict[str, Any],
+    state: str,
+) -> Dict[str, Any]:
+    sign_key = _normalize_sign_name(sign)
+    action_template = SIGN_ACTIONS.get(
+        sign_key,
+        "Use rituais rápidos antes das refeições para manter {goal_focus}.",
+    )
+    first = action_template.format(goal_focus=GOAL_FOCUS.get(goal, GOAL_FOCUS["manter"]))
+    second = _habit_activity_line(activity, goal)
+    third = _habit_recovery_line(sleep, stress, goal)
+    cta = CTA_TEXT.get(state, CTA_TEXT["S2"])
+    return {
+        "bullets": [first, second, third],
+        "cta": cta,
+    }
+
+
+def _build_health_certificate(
+    hydration: Dict[str, Any],
+    sleep: Dict[str, Any],
+    stress: Dict[str, Any],
+    activity: Dict[str, Any],
+    bmi: Dict[str, Any],
+    score: int,
+    badge: str,
+    state: str,
+) -> Dict[str, Any]:
+    water = hydration.get("water")
+    recommended = hydration.get("recommended")
+    water_display = (
+        f"{water:.1f} L / {recommended:.1f} L"
+        if isinstance(water, (int, float)) and isinstance(recommended, (int, float))
+        else "—"
+    )
+    sleep_hours = sleep.get("hours")
+    sleep_display = (
+        f"{sleep_hours:.1f} h"
+        if isinstance(sleep_hours, (int, float))
+        else "—"
+    )
+    stress_value = stress.get("value")
+    stress_display = (
+        f"{stress['label']} ({stress_value:.0f}/5)"
+        if isinstance(stress_value, (int, float))
+        else stress.get("label", "—")
+    )
+    bmi_value = bmi.get("value")
+    bmi_display = (
+        f"{bmi_value:.1f}"
+        if isinstance(bmi_value, (int, float)) and bmi_value > 0
+        else "—"
+    )
+    bullets = [
+        f"Hidratação: {hydration.get('label', '—')} ({water_display})",
+        f"Sono: {sleep_display} · {sleep.get('label', '—')}",
+        f"Estresse: {stress_display}",
+        f"Atividade: {activity.get('label', '—')}",
+        f"IMC: {bmi_display} · {bmi.get('category', '—')}",
+    ]
+    metrics_for_focus = [
+        ("Hidratação", hydration.get("score", 0)),
+        ("Sono", sleep.get("score", 0)),
+        ("Estresse", stress.get("score", 0)),
+        ("Atividade", activity.get("score", 0)),
+        ("IMC", bmi.get("score", 0)),
+    ]
+    focus_metric = min(
+        metrics_for_focus,
+        key=lambda item: item[1] if isinstance(item[1], (int, float)) else 100,
+    )
+    focus_text = FOCUS_STEPS.get(
+        focus_metric[0],
+        "consultar o plano para próximos ajustes.",
+    )
+    note = f"Nota geral: {badge} ({score}/100). Próximo melhor passo: {focus_text}"
+    cta = CTA_TEXT.get(state, CTA_TEXT["S2"])
+    return {
+        "bullets": bullets,
+        "note": note,
+        "cta": cta,
+    }
+
+
+def _render_behavior_cards(
+    state: str,
+    sign: Optional[str],
+    goal: str,
+    hydration: Dict[str, Any],
+    sleep: Dict[str, Any],
+    stress: Dict[str, Any],
+    activity: Dict[str, Any],
+    bmi: Dict[str, Any],
+    score: int,
+    badge: str,
+) -> None:
+    behavior_content = _build_behavior_card_content(sign, goal)
+    habits_content = _build_habit_suggestions(sign, goal, activity, sleep, stress, state)
+    certificate_content = _build_health_certificate(
+        hydration,
+        sleep,
+        stress,
+        activity,
+        bmi,
+        score,
+        badge,
+        state,
+    )
+    card1_list = "".join(
+        f"<li>{html.escape(item)}</li>" for item in behavior_content["bullets"]
+    )
+    card2_list = "".join(
+        f"<li>{html.escape(item)}</li>" for item in habits_content["bullets"]
+    )
+    card3_list = "".join(
+        f"<li>{html.escape(item)}</li>" for item in certificate_content["bullets"]
+    )
+    st.markdown(
+        f"""
+        <div class='behavior-grid'>
+          <div class='behavior-card'>
+            <div class='card-icon'>{html.escape(str(behavior_content['symbol']))} <span>{html.escape(str(behavior_content['element_icon']))}</span></div>
+            <div class='card-title'>Comportamento por Signo &amp; Elemento</div>
+            <div class='card-subtitle'>{html.escape(behavior_content['element'])}</div>
+            <ul>{card1_list}</ul>
+          </div>
+          <div class='behavior-card'>
+            <div class='card-icon'>🧭</div>
+            <div class='card-title'>Hábitos Sugeridos (Comportamentais)</div>
+            <ul>{card2_list}</ul>
+            <p class='card-cta'>{html.escape(habits_content['cta'])}</p>
+          </div>
+          <div class='behavior-card'>
+            <div class='card-icon'>🩺</div>
+            <div class='card-title'>Atestado de Saúde</div>
+            <ul>{card3_list}</ul>
+            <p class='card-note'>{html.escape(certificate_content['note'])}</p>
+            <p class='card-cta'>{html.escape(certificate_content['cta'])}</p>
+          </div>
         </div>
         """,
         unsafe_allow_html=True,
@@ -970,6 +1332,19 @@ def main() -> None:
     )
     rec1, rec2 = _build_recommendations(hydration, sleep, stress, activity, bmi, state_info["state"])
     _render_health_score(score, badge, badge_color, rec1, rec2)
+
+    _render_behavior_cards(
+        state_info["state"],
+        respostas.get("signo"),
+        goal,
+        hydration,
+        sleep,
+        stress,
+        activity,
+        bmi,
+        score,
+        badge,
+    )
 
     bristol_label = extract_bristol_tipo(respostas.get("tipo_fezes"), insights.get("bristol", ""))
     bristol_norm = _strip_accents(bristol_label)
