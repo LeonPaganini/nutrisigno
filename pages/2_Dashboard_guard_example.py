@@ -3,6 +3,29 @@ from __future__ import annotations
 
 import streamlit as st
 from modules import app_bootstrap, repo
+from modules.client_state import get_user_cached, load_client_state, save_client_state
+
+
+def _rehydrate_dashboard_state() -> None:
+    if st.session_state.get("pac_id"):
+        return
+
+    pac_id, step = load_client_state()
+    if not pac_id:
+        return
+
+    st.session_state.pac_id = pac_id
+    if step:
+        try:
+            st.session_state.step = max(1, int(str(step)))
+        except Exception:  # pragma: no cover - defensive
+            pass
+
+    payload = get_user_cached(pac_id)
+    if payload:
+        st.session_state.paciente_data = payload
+
+    save_client_state(pac_id, str(st.session_state.get("step")) if st.session_state.get("step") else None)
 
 def require_login() -> None:
     """Impede acesso se não houver sessão com pac_id."""
@@ -22,6 +45,8 @@ def main() -> None:
     st.title("📊 Meu Painel — Exemplo com Guard")
     st.write("Esta página ilustra o bloqueio de acesso quando não há sessão ativa (pac_id).")
 
+    _rehydrate_dashboard_state()
+
     # exige sessão
     require_login()
 
@@ -30,7 +55,10 @@ def main() -> None:
     st.success(f"✅ Sessão válida. pac_id: `{pac_id}`")
 
     # Busca payload real
-    payload = st.session_state.get("paciente_data") or repo.get_by_pac_id(pac_id)
+    payload = st.session_state.get("paciente_data") or get_user_cached(pac_id) or repo.get_by_pac_id(pac_id)
+    if payload:
+        st.session_state.paciente_data = payload
+        save_client_state(pac_id, str(st.session_state.get("step")) if st.session_state.get("step") else None)
     if not payload:
         st.warning("Cadastro encontrado, mas sem dados carregados agora. Tente novamente em instantes.")
         st.stop()

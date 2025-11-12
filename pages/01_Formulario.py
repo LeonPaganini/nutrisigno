@@ -9,6 +9,7 @@ from typing import Any, Dict
 import streamlit as st
 
 from modules import email_utils, openai_utils, pdf_generator, repo
+from modules.client_state import get_user_cached, load_client_state, save_client_state
 from modules.form.exporters import build_insights_pdf_bytes, build_share_png_bytes
 from modules.form.mapper import map_ui_to_dto
 from modules.form.service import FormService
@@ -41,6 +42,55 @@ log = logging.getLogger(__name__)
 SIMULATE: bool = os.getenv("SIMULATE", "0") == "1"
 
 
+def _rehydrate_form_state() -> None:
+    """Reidrata a sessão usando camadas cliente/servidor quando necessário."""
+
+    hydrated = st.session_state.get("_client_state_synced")
+    if hydrated:
+        return
+
+    pac_id_existing = st.session_state.get("pac_id")
+    data_existing = st.session_state.get("data") or {}
+    if pac_id_existing and data_existing:
+        st.session_state._client_state_synced = True
+        return
+
+    pac_id, step = load_client_state()
+    if not pac_id:
+        st.session_state._client_state_synced = True
+        return
+
+    if not pac_id_existing:
+        st.session_state.pac_id = pac_id
+
+    target_step: int | None = None
+    if step:
+        try:
+            target_step = max(1, int(str(step)))
+        except (TypeError, ValueError):
+            target_step = None
+
+    payload = get_user_cached(pac_id)
+    if payload:
+        st.session_state.data = payload.get("respostas") or {}
+        st.session_state.plan = payload.get("plano_alimentar")
+        st.session_state.plano_compacto = payload.get("plano_alimentar_compacto")
+        st.session_state.macros = payload.get("macros")
+        st.session_state.paciente_data = payload
+        st.session_state.loaded_external = True
+        if target_step is None and (st.session_state.get("step") or 1) < 6:
+            target_step = 6
+
+    if target_step is not None:
+        st.session_state.step = target_step
+
+    if pac_id:
+        step_for_save = target_step if target_step is not None else st.session_state.get("step")
+        save_client_state(pac_id, str(step_for_save) if step_for_save else None)
+
+    st.session_state._client_state_synced = True
+
+
 def _persist_form(service: FormService, data: Dict[str, Any]) -> str | None:
     """Persist the current form state using the service layer."""
 
@@ -59,6 +109,8 @@ def _persist_form(service: FormService, data: Dict[str, Any]) -> str | None:
             macros=st.session_state.get("macros") or {},
         )
         st.session_state.pac_id = pac_id
+        save_client_state(pac_id, str(st.session_state.get("step") or ""))
+        get_user_cached(pac_id)
         log.info("submit.ok pac_id=%s", pac_id)
         return pac_id
     except ValueError as exc:
@@ -75,10 +127,15 @@ def _render_section(result: SectionResult) -> None:
         st.session_state.data.update(result.data)
         if "signo" in result.data:
             st.session_state["signo"] = result.data["signo"]
+    step_changed = False
     if result.advance:
         next_step()
+        step_changed = True
     if result.go_back:
         st.session_state.step = max(1, st.session_state.step - 1)
+        step_changed = True
+    if step_changed and st.session_state.get("pac_id"):
+        save_client_state(st.session_state.pac_id, str(st.session_state.step))
 
 
 def _fallback_insights(payload: Dict[str, Any]) -> Dict[str, Any]:
@@ -297,6 +354,8 @@ def _render_insights(service: FormService, payload: Dict[str, Any]) -> None:
     with c3:
         if st.button("Gerar plano nutricional e prosseguir para pagamento"):
             st.session_state.step += 1
+            if st.session_state.get("pac_id"):
+                save_client_state(st.session_state.pac_id, str(st.session_state.step))
             st.rerun()
 
 
@@ -347,6 +406,8 @@ def _render_payment(service: FormService) -> None:
                     macros=macros,
                 )
                 st.session_state.pac_id = pac_id
+                save_client_state(pac_id, str(st.session_state.get("step") or ""))
+                get_user_cached(pac_id)
                 log.info("submit.ok pac_id=%s", pac_id)
             except ValueError as exc:
                 log.info("submit.fail exc=%s", exc)
@@ -430,20 +491,7 @@ def main() -> None:
         st.caption(msg)
 
     initialize_session()
-
-    pac_id_param = st.query_params.get("id")
-    if pac_id_param and not st.session_state.get("loaded_external"):
-        try:
-            loaded = repo.get_by_pac_id(pac_id_param)
-            log.info("submit.read pac_id=%s", pac_id_param)
-        except Exception:
-            loaded = None
-        if loaded:
-            st.session_state.pac_id = loaded["pac_id"]
-            st.session_state.data = loaded.get("respostas", {}) or {}
-            st.session_state.plan = loaded.get("plano_alimentar")
-            st.session_state.step = 6
-            st.session_state.loaded_external = True
+    _rehydrate_form_state()
 
     total_steps = 7
     progress = (st.session_state.step - 1) / total_steps

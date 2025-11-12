@@ -17,6 +17,8 @@ def initialize_session() -> None:
     st.session_state.setdefault("data", {})
     st.session_state.setdefault("paid", False)
     st.session_state.setdefault("plan", None)
+    st.session_state.setdefault("plano_compacto", None)
+    st.session_state.setdefault("macros", None)
     st.session_state.setdefault("pac_id", None)
 
 
