@@ -53,11 +53,17 @@ def _rehydrate_form_state() -> None:
     data_existing = st.session_state.get("data") or {}
     if pac_id_existing and data_existing:
         st.session_state._client_state_synced = True
+        st.session_state.pop("_client_state_attempts", None)
         return
 
     pac_id, step = load_client_state()
     if not pac_id:
+        attempts = int(st.session_state.get("_client_state_attempts", 0)) + 1
+        st.session_state._client_state_attempts = attempts
+        if attempts < 3:
+            return
         st.session_state._client_state_synced = True
+        st.session_state.pop("_client_state_attempts", None)
         return
 
     if not pac_id_existing:
@@ -89,6 +95,7 @@ def _rehydrate_form_state() -> None:
         save_client_state(pac_id, str(step_for_save) if step_for_save else None)
 
     st.session_state._client_state_synced = True
+    st.session_state.pop("_client_state_attempts", None)
 
 
 def _persist_form(service: FormService, data: Dict[str, Any]) -> str | None:
