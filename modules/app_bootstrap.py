@@ -2,20 +2,21 @@
 from __future__ import annotations
 
 import logging
+from typing import Tuple
 
 from sqlalchemy import text
 
-from .db import engine, Base
+from .db import Base, engine
 
 log = logging.getLogger(__name__)
 
+_BOOTSTRAP_DONE: bool = False
+_BOOTSTRAP_MSG: str | None = None
+
 
 def init_models_and_migrate() -> None:
-    """
-    Inicializa os modelos (create_all) e aplica migrações mínimas
-    necessárias para alinhar a tabela patients ao modelo atual.
-    Deve ser chamada no boot da aplicação (ex.: app.py).
-    """
+    """Inicializa os modelos e aplica migrações idempotentes."""
+
     # Cria tabelas que ainda não existem
     Base.metadata.create_all(bind=engine)
 
@@ -24,12 +25,8 @@ def init_models_and_migrate() -> None:
 
 
 def migrate_patients_table() -> None:
-    """
-    Migração idempotente da tabela patients.
-    - Adiciona colunas de status_pagamento, status_plano, plano_ia,
-      substituicoes, cardapio_ia, pdf_completo_url se não existirem.
-    - Funciona tanto em PostgreSQL quanto em SQLite local.
-    """
+    """Aplica migrações mínimas à tabela ``patients`` de forma idempotente."""
+
     with engine.begin() as conn:
         dialect = engine.dialect.name
 
@@ -121,3 +118,28 @@ def migrate_patients_table() -> None:
             )
 
             log.info("Migração patients (SQLite) aplicada com sucesso.")
+
+
+def ensure_bootstrap() -> Tuple[bool, str | None]:
+    """Garante que o banco esteja pronto antes de usar a aplicação."""
+
+    global _BOOTSTRAP_DONE, _BOOTSTRAP_MSG
+
+    if _BOOTSTRAP_DONE:
+        return True, _BOOTSTRAP_MSG
+
+    try:
+        # Importa o módulo de modelos para registrar metadata no SQLAlchemy.
+        import modules.repo  # noqa: F401  # pylint: disable=unused-import
+
+        init_models_and_migrate()
+    except Exception as exc:  # pragma: no cover - diagnóstico em produção
+        log.exception("Falha ao executar bootstrap da aplicação")
+        _BOOTSTRAP_DONE = False
+        _BOOTSTRAP_MSG = str(exc)
+        return False, _BOOTSTRAP_MSG
+
+    _BOOTSTRAP_DONE = True
+    _BOOTSTRAP_MSG = "Bootstrap executado com sucesso."
+    log.info(_BOOTSTRAP_MSG)
+    return True, _BOOTSTRAP_MSG
