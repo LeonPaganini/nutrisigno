@@ -122,7 +122,7 @@ def _render_section(result: SectionResult) -> None:
     if step_changed:
         if st.session_state.get("pac_id"):
             save_client_state(st.session_state.pac_id, str(st.session_state.step))
-        st.experimental_rerun()
+        st.rerun()
 
 
 def _render_insights(service: FormService, payload: Dict[str, Any]) -> None:
@@ -149,7 +149,7 @@ def _render_insights(service: FormService, payload: Dict[str, Any]) -> None:
             params = st.experimental_get_query_params()
             params["page"] = "02_Dashboard"
             st.experimental_set_query_params(**params)
-            st.experimental_rerun()
+            st.rerun()
         except Exception:
             st.info("Use o menu lateral para acessar o painel '02_Dashboard'.")
             st.stop()
