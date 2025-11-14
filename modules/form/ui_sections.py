@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from datetime import date, time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from PIL import Image
 import streamlit as st
@@ -37,6 +37,41 @@ def _to_float(value: Any, default: float = 0.0) -> float:
 
 
 _BR_DATE_RE = re.compile(r"^\s*(\d{2})/(\d{2})/(\d{4})\s*$")
+
+
+def _split_historico(value: str) -> Tuple[str, str]:
+    if not value:
+        return "", ""
+
+    raw_value = value.strip()
+    if not raw_value:
+        return "", ""
+
+    marker_pat = "Patologias/Doenças:"
+    marker_med = "Medicamentos em uso:"
+
+    if marker_med in raw_value:
+        before, after = raw_value.split(marker_med, 1)
+        patologias = before.replace(marker_pat, "").strip()
+        medicamentos = after.strip()
+        return patologias, medicamentos
+
+    if "Medicamentos:" in raw_value:
+        before, after = raw_value.split("Medicamentos:", 1)
+        patologias = before.replace(marker_pat, "").strip()
+        medicamentos = after.strip()
+        return patologias, medicamentos
+
+    return raw_value, ""
+
+
+def _compose_historico(patologias: str, medicamentos: str) -> str:
+    partes: List[str] = []
+    if patologias.strip():
+        partes.append("Patologias/Doenças:\n" + patologias.strip())
+    if medicamentos.strip():
+        partes.append("Medicamentos em uso:\n" + medicamentos.strip())
+    return "\n\n".join(partes)
 
 
 def parse_br_date(value: str) -> date | None:
@@ -261,29 +296,49 @@ def sign_selection_section(current_sign: Optional[str]) -> SectionResult:
 
 def nutrition_section(session_data: Dict[str, Any]) -> SectionResult:
     st.header("3. Avaliação nutricional")
+    patologias_default, medicamentos_default = _split_historico(
+        session_data.get("historico_saude", "")
+    )
     with st.form("avaliacao_nutricional"):
-        historico = st.text_area(
-            "Histórico de saúde e medicamentos",
-            help="Descreva brevemente quaisquer condições médicas ou medicamentos em uso.",
-            value=session_data.get("historico_saude", ""),
-        )
-        consumo_agua = st.number_input(
-            "Consumo diário de água (litros)",
-            min_value=0.0,
-            max_value=10.0,
-            step=0.1,
-            value=_to_float(session_data.get("consumo_agua"), 1.5),
-            format="%.1f",
-        )
-        atividade = st.selectbox(
-            "Nível de atividade física",
-            ["Sedentário", "Leve", "Moderado", "Intenso"],
-            index=["Sedentário", "Leve", "Moderado", "Intenso"].index(
-                session_data.get("nivel_atividade", "Moderado")
-            ),
-        )
+        st.subheader("Histórico de saúde")
+        col_hist_pat, col_hist_med = st.columns(2, gap="medium")
+        with col_hist_pat:
+            patologias = st.text_area(
+                "Patologias ou condições diagnosticadas",
+                value=patologias_default,
+                help="Exemplos: diabetes tipo 2, hipertensão, alergias alimentares.",
+            )
+        with col_hist_med:
+            medicamentos = st.text_area(
+                "Medicamentos em uso",
+                value=medicamentos_default,
+                help="Inclua nome, dosagem e frequência dos medicamentos que utiliza.",
+            )
+
         st.markdown("---")
-        st.subheader("Tipo de Fezes (Escala de Bristol)")
+        st.subheader("Rotina e hábitos")
+        col_rotina_agua, col_rotina_atividade = st.columns(2, gap="medium")
+        with col_rotina_agua:
+            consumo_agua = st.number_input(
+                "Consumo diário de água (litros)",
+                min_value=0.0,
+                max_value=10.0,
+                step=0.1,
+                value=_to_float(session_data.get("consumo_agua"), 1.5),
+                format="%.1f",
+                help="Informe a média que costuma beber por dia. Exemplo: 2 L ≈ 10 copos de 200 ml.",
+            )
+        with col_rotina_atividade:
+            atividade = st.selectbox(
+                "Nível de atividade física",
+                ["Sedentário", "Leve", "Moderado", "Intenso"],
+                index=["Sedentário", "Leve", "Moderado", "Intenso"].index(
+                    session_data.get("nivel_atividade", "Moderado")
+                ),
+            )
+
+        st.markdown("---")
+        st.subheader("Estado atual (fezes e urina)")
         col_bristol1, col_bristol2 = st.columns([1, 2])
         with col_bristol1:
             try:
@@ -333,14 +388,16 @@ def nutrition_section(session_data: Dict[str, Any]) -> SectionResult:
     if not submitted:
         return SectionResult({}, [])
 
-    required = [historico, consumo_agua, atividade, tipo_fezes, cor_urina]
+    historico_composto = _compose_historico(patologias, medicamentos)
+
+    required = [historico_composto, consumo_agua, atividade, tipo_fezes, cor_urina]
     if any(field in (None, "") for field in required):
         msg = "Por favor preencha todos os campos."
         st.error(msg)
         return SectionResult({}, [msg])
 
     section_data = {
-        "historico_saude": historico,
+        "historico_saude": historico_composto,
         "consumo_agua": _to_float(consumo_agua, 1.5),
         "nivel_atividade": atividade,
         "tipo_fezes": tipo_fezes,
@@ -352,31 +409,45 @@ def nutrition_section(session_data: Dict[str, Any]) -> SectionResult:
 def psychological_section(session_data: Dict[str, Any]) -> SectionResult:
     st.header("4. Avaliação psicológica e perfil")
     with st.form("avaliacao_psicologica"):
-        motivacao = st.slider(
-            "Nível de motivação para mudanças alimentares", 1, 5,
-            int(session_data.get("motivacao", 3))
-        )
-        estresse = st.slider(
-            "Nível de estresse atual", 1, 5,
-            int(session_data.get("estresse", 3))
-        )
-        habitos = st.text_area(
-            "Descreva brevemente seus hábitos alimentares",
-            value=session_data.get("habitos_alimentares", ""),
-        )
+        st.subheader("Estado atual (motivação, estresse, energia)")
+        col_motivacao, col_estresse = st.columns(2, gap="medium")
+        with col_motivacao:
+            motivacao = st.slider(
+                "Nível de motivação para mudanças alimentares", 1, 5,
+                int(session_data.get("motivacao", 3))
+            )
+        with col_estresse:
+            estresse = st.slider(
+                "Nível de estresse atual", 1, 5,
+                int(session_data.get("estresse", 3))
+            )
         energia = st.select_slider(
             "Como você descreveria sua energia diária?",
             options=["Baixa", "Moderada", "Alta"],
             value=session_data.get("energia_diaria", "Moderada"),
         )
-        impulsividade = st.slider(
-            "Quão impulsivo(a) você é em relação à alimentação?", 1, 5,
-            int(session_data.get("impulsividade_alimentar", 3))
+
+        st.markdown("---")
+        st.subheader("Rotina e hábitos")
+        habitos = st.text_area(
+            "Descreva brevemente seus hábitos alimentares",
+            value=session_data.get("habitos_alimentares", ""),
+            help=(
+                "Compartilhe detalhes como horários das refeições, se costuma pular o café da manhã, "
+                "belisca à noite ou possui outras rotinas alimentares marcantes."
+            ),
         )
-        rotina = st.slider(
-            "Quão importante é para você seguir uma rotina alimentar?", 1, 5,
-            int(session_data.get("rotina_alimentar", 3))
-        )
+        col_impulso, col_rotina = st.columns(2, gap="medium")
+        with col_impulso:
+            impulsividade = st.slider(
+                "Quão impulsivo(a) você é em relação à alimentação?", 1, 5,
+                int(session_data.get("impulsividade_alimentar", 3))
+            )
+        with col_rotina:
+            rotina = st.slider(
+                "Quão importante é para você seguir uma rotina alimentar?", 1, 5,
+                int(session_data.get("rotina_alimentar", 3))
+            )
         submitted = st.form_submit_button("Próximo", use_container_width=True)
 
     if not submitted:
@@ -404,7 +475,10 @@ def review_section(session_data: Dict[str, Any]) -> SectionResult:
     with st.form("avaliacao_geral"):
         observacoes = st.text_area(
             "Observações adicionais",
-            help="Compartilhe qualquer informação extra que julgue relevante.",
+            help=(
+                "Inclua restrições específicas, situações especiais de rotina ou informações importantes "
+                "que não se encaixaram nas perguntas anteriores."
+            ),
             value=session_data.get("observacoes", ""),
         )
         submitted = st.form_submit_button("Prosseguir para insights", use_container_width=True)
@@ -413,3 +487,4 @@ def review_section(session_data: Dict[str, Any]) -> SectionResult:
         return SectionResult({}, [])
 
     return SectionResult({"observacoes": observacoes}, [], advance=True)
+

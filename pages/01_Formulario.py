@@ -119,8 +119,10 @@ def _render_section(result: SectionResult) -> None:
     if result.go_back:
         st.session_state.step = max(1, st.session_state.step - 1)
         step_changed = True
-    if step_changed and st.session_state.get("pac_id"):
-        save_client_state(st.session_state.pac_id, str(st.session_state.step))
+    if step_changed:
+        if st.session_state.get("pac_id"):
+            save_client_state(st.session_state.pac_id, str(st.session_state.step))
+        st.experimental_rerun()
 
 
 def _render_insights(service: FormService, payload: Dict[str, Any]) -> None:
