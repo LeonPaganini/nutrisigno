@@ -866,7 +866,7 @@ def _render_health_score(score: int, badge: str, badge_color: str, rec1: str, re
     badge_class = "ok" if badge_color == SUCCESS else ("critical" if badge_color == CRITICAL else "attention")
     st.markdown(
         f"""
-        <div class='score-card'>
+        <div class='score-card' style="margin-top: 18px; margin-bottom: 18px; padding: 16px;">
             <div class='score'>{score}</div>
             <span class='score-badge {badge_class}'>{html.escape(badge)}</span>
             <ul>
