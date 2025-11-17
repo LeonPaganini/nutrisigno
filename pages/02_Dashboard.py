@@ -1105,15 +1105,20 @@ def _render_actions(
     pdf_bytes: bytes,
     share_bytes: bytes,
 ) -> None:
+    # Espaço vertical antes do bloco de ações
+    st.markdown("<div style='margin-top: 24px;'></div>", unsafe_allow_html=True)
+
     if state == "S1":
         cols = st.columns(3, gap="medium")
         payment_url = payload.get("payment_url") or payload.get("checkout_url")
+
         with cols[0]:
             if payment_url:
                 st.link_button("Liberar Plano Completo", payment_url, type="primary")
             else:
                 if st.button("Liberar Plano Completo", type="primary"):
                     _redirect_to_form(pac_id)
+
         with cols[1]:
             st.download_button(
                 "PDF Resumo",
@@ -1122,6 +1127,7 @@ def _render_actions(
                 mime="application/pdf",
                 use_container_width=True,
             )
+
         with cols[2]:
             st.download_button(
                 "Compartilhar resultado",
@@ -1130,15 +1136,22 @@ def _render_actions(
                 mime="image/png",
                 use_container_width=True,
             )
+
+        # Espaço depois do bloco (não colar no texto/alerta seguinte)
+        st.markdown("<div style='margin-bottom: 24px;'></div>", unsafe_allow_html=True)
         return
 
+    # Estado com plano IA disponível
     cols = st.columns(4, gap="medium")
+
     with cols[0]:
         if st.button("Plano IA", type="primary"):
             st.toast("Confira a aba 'Cardápio base' logo abaixo.")
+
     with cols[1]:
         if st.button("Substituições ±2%"):
             st.toast("Veja a aba de substituições para trocas inteligentes.")
+
     with cols[2]:
         pdf_completo = payload.get("pdf_completo_url") or payload.get("pdf_url_completo")
         if pdf_completo:
@@ -1151,6 +1164,7 @@ def _render_actions(
                 mime="application/pdf",
                 use_container_width=True,
             )
+
     with cols[3]:
         st.download_button(
             "Compartilhar resultado",
@@ -1159,6 +1173,9 @@ def _render_actions(
             mime="image/png",
             use_container_width=True,
         )
+
+    # Espaço depois do bloco de ações (versão paga)
+    st.markdown("<div style='margin-bottom: 24px;'></div>", unsafe_allow_html=True)
 
 
 def _redirect_to_form(pac_id: str) -> None:
