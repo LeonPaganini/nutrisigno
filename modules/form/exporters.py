@@ -5,7 +5,7 @@ from __future__ import annotations
 import io
 from typing import Dict
 
-import matplotlib.pyplot as plt
+from modules.share_image import gerar_imagem_share
 
 
 def build_insights_pdf_bytes(insights: Dict[str, object]) -> bytes:
@@ -44,19 +44,7 @@ def build_insights_pdf_bytes(insights: Dict[str, object]) -> bytes:
     return buf.getvalue()
 
 
-def build_share_png_bytes(insights: Dict[str, object]) -> bytes:
-    fig = plt.figure(figsize=(6, 6), dpi=200)
-    plt.title("NutriSigno — Resumo", pad=12)
-    text = (
-        f"IMC: {insights['bmi']} ({insights['bmi_category']})\n"
-        f"Hidratação: {insights['consumption']['water_liters']} / {insights['consumption']['recommended_liters']} L\n"
-        f"Bristol: {insights['bristol']}\nUrina: {insights['urine']}\n"
-        f"Motivação/Estresse: {insights['motivacao']}/5 · {insights['estresse']}/5\n"
-        f"Insight do signo: {insights['sign_hint']}"
-    )
-    plt.text(0.02, 0.95, text, fontsize=12, va="top")
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png", bbox_inches="tight")
-    plt.close(fig)
-    buf.seek(0)
-    return buf.getvalue()
+def build_share_png_bytes(share_data: Dict[str, object], formato: str = "story") -> bytes:
+    """Proxy compatível para geração de PNGs compartilháveis."""
+
+    return gerar_imagem_share(share_data, formato=formato)

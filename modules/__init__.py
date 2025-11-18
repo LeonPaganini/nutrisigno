@@ -14,4 +14,5 @@ __all__: list[str] = [
     "dashboard_utils",
     "email_utils",
     "plan_post_payment",
+    "share_image",
 ]
