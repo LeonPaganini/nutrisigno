@@ -14,14 +14,16 @@ import streamlit as st
 
 from modules import app_bootstrap, openai_utils, repo
 from modules.client_state import get_user_cached, load_client_state, save_client_state
-from modules.form.exporters import build_insights_pdf_bytes, build_share_png_bytes
+from modules.form.exporters import build_insights_pdf_bytes
 from modules.form.ui_insights import (
+    collect_comportamentos,
     element_icon,
     extract_bristol_tipo,
     extract_cor_urina,
     signo_elemento,
     signo_symbol,
 )
+from modules.share_image import gerar_imagem_share
 
 log = logging.getLogger(__name__)
 
@@ -674,6 +676,81 @@ def _general_health_score(scores: Iterable[int]) -> Tuple[int, str, str]:
     if mean >= 60:
         return mean, "Atenção", WARNING
     return mean, "Ajustar", CRITICAL
+
+
+# ---------------------------------------------------------------------------
+# Geração da imagem compartilhável
+# ---------------------------------------------------------------------------
+
+
+def _extract_first_name(raw: Any) -> str:
+    text = str(raw or "").strip()
+    if not text:
+        return "Paciente"
+    first = re.split(r"\s+", text, maxsplit=1)[0]
+    return first[:30]
+
+
+def _calculate_age(raw: Any) -> int:
+    text = str(raw or "").strip()
+    if not text:
+        return 30
+    for fmt in ("%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y"):
+        try:
+            birth = datetime.strptime(text, fmt).date()
+            break
+        except ValueError:
+            continue
+    else:
+        return 30
+    today = datetime.utcnow().date()
+    years = today.year - birth.year - ((today.month, today.day) < (birth.month, birth.day))
+    if years < 0 or years > 120:
+        return 30
+    return years
+
+
+def _build_share_payload(
+    respostas: Dict[str, Any],
+    insights: Dict[str, Any],
+    hydration: Dict[str, Any],
+    bmi: Dict[str, Any],
+    score: int,
+) -> Dict[str, Any]:
+    primeiro_nome = _extract_first_name(respostas.get("nome") or respostas.get("nome_social"))
+    idade = _calculate_age(respostas.get("data_nascimento"))
+    signo = (respostas.get("signo") or insights.get("signo") or "Signo").strip() or "Signo"
+    elemento = signo_elemento(signo)
+    if elemento not in {"Fogo", "Água", "Terra", "Ar"}:
+        elemento = "Ar"
+
+    comportamentos = [item.strip() for item in collect_comportamentos(respostas) if item.strip()]
+    comportamentos = comportamentos[:3]
+    if not comportamentos:
+        comportamentos = [
+            "Hidrate-se ao longo do dia.",
+            "Planeje refeições coloridas e equilibradas.",
+        ]
+
+    insight_frase = str(
+        insights.get("sign_hint") or "Use seu signo como inspiração de hábitos saudáveis."
+    ).strip()
+    if not insight_frase:
+        insight_frase = "Use seu signo como inspiração de hábitos saudáveis."
+
+    imc_value = float(bmi.get("value") or insights.get("bmi") or 0.0)
+    hidratacao_score = float(hydration.get("score") or 0)
+    return {
+        "primeiro_nome": primeiro_nome,
+        "idade": idade,
+        "imc": imc_value,
+        "score_geral": float(score or 0),
+        "hidratacao_score": hidratacao_score,
+        "signo": signo,
+        "elemento": elemento,
+        "comportamentos": comportamentos,
+        "insight_frase": insight_frase,
+    }
 
 
 def _build_recommendations(
@@ -1431,7 +1508,8 @@ def main() -> None:
     _render_interpretations(interpretations)
 
     pdf_bytes = build_insights_pdf_bytes(insights)
-    share_bytes = build_share_png_bytes(insights)
+    share_payload = _build_share_payload(respostas, insights, hydration, bmi, score)
+    share_bytes = gerar_imagem_share(share_payload, formato="story")
     _render_actions(state_info["state"], pac_id, insights, payload, pdf_bytes, share_bytes)
 
     if state_info["state"] != "S1" and ai_summary:
