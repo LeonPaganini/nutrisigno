@@ -16,7 +16,7 @@ import io
 import math
 import os
 from dataclasses import dataclass, field
-from typing import Any, Dict, Iterable, List, Literal, Mapping, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Literal, Mapping, Optional, Sequence, Tuple
 
 from PIL import Image, ImageDraw, ImageFont, ImageOps
 
@@ -38,7 +38,7 @@ class ShareImagePayload:
     elemento: ElementoSigno
     comportamentos: Sequence[str] = field(default_factory=list)
     insight_frase: str = ""
-    pilares_scores: Dict[str, float] = field(default_factory=dict)
+    pilares_scores: Dict[str, Optional[float]] = field(default_factory=dict)
 
     @classmethod
     def from_mapping(cls, data: Dict[str, Any]) -> "ShareImagePayload":
@@ -98,7 +98,8 @@ class ShareImagePayload:
 
     @property
     def hidratacao_score(self) -> float:
-        return float(self.pilares_scores.get("Hidratacao", 0))
+        value = self.pilares_scores.get("Hidratacao")
+        return float(value or 0)
 
 
 BACKGROUND_GRADIENT = ("#2A1457", "#3D1F78", "#6A3CBD", "#9F6CFF")
@@ -307,13 +308,16 @@ def _draw_metric_card(draw: ImageDraw.ImageDraw, bbox: Tuple[int, int, int, int]
 
 
 def _draw_hydration_card(draw: ImageDraw.ImageDraw, bbox: Tuple[int, int, int, int],
-                         value: float, accent: Tuple[int, int, int, int], detail: Tuple[int, int, int, int]) -> None:
-    _draw_metric_card(draw, bbox, TEXTOS_FIXOS["card_hidratacao"], f"{value:.0f}", accent, detail)
+                         value: Optional[float], accent: Tuple[int, int, int, int],
+                         detail: Tuple[int, int, int, int]) -> None:
+    display_value = "—" if value is None else f"{value:.0f}"
+    numeric = float(value or 0)
+    _draw_metric_card(draw, bbox, TEXTOS_FIXOS["card_hidratacao"], display_value, accent, detail)
     x1, y1, x2, y2 = bbox
     bar_height = 24
     bar_margin = 40
     bar_y = y2 - bar_height - 48
-    fill_width = (x2 - x1 - 2 * bar_margin) * max(0.0, min(value, 100.0)) / 100.0
+    fill_width = (x2 - x1 - 2 * bar_margin) * max(0.0, min(numeric, 100.0)) / 100.0
     draw.rounded_rectangle(
         (x1 + bar_margin, bar_y, x2 - bar_margin, bar_y + bar_height),
         radius=12,
@@ -383,7 +387,7 @@ def _draw_radar(
 def _normalize_values(data: ShareImagePayload) -> Tuple[Sequence[float], Sequence[str]]:
     labels = list(PILAR_ORDER)
     normalized = [
-        max(0.0, min(float(data.pilares_scores.get(label, 0)) / 100.0, 1.0))
+        max(0.0, min(float(data.pilares_scores.get(label) or 0) / 100.0, 1.0))
         for label in labels
     ]
     return normalized, labels

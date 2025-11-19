@@ -10,6 +10,8 @@ from typing import Any, Dict, List, Optional, Tuple
 from PIL import Image
 import streamlit as st
 
+from .form_schema import FORM_SCHEMA
+
 PATH_BRISTOL = "assets/escala_bistrol.jpeg"
 PATH_URINA = "assets/escala_urina.jpeg"
 
@@ -197,6 +199,115 @@ def render_selected_info(signo: Optional[str]) -> None:
     )
 
 
+def _is_int_like(value: Any) -> bool:
+    if isinstance(value, bool):
+        return False
+    if isinstance(value, int):
+        return True
+    if isinstance(value, float):
+        return value.is_integer()
+    try:
+        return float(value).is_integer()
+    except (TypeError, ValueError):
+        return False
+
+
+def _resolve_option_index(options: List[Any], value: Any) -> int:
+    if not options:
+        return 0
+    if value is None:
+        return 0
+    normalized = str(value).casefold()
+    for idx, option in enumerate(options):
+        if str(option).casefold() == normalized:
+            return idx
+    return 0
+
+
+def _slider_params(question: Dict[str, Any], session_data: Dict[str, Any]) -> Tuple[Any, Any, Any, Any]:
+    config = question.get("config", {})
+    min_value = config.get("min", 0)
+    max_value = config.get("max", 10)
+    step = config.get("step", 1)
+    raw_default = session_data.get(question["id"], question.get("valor_padrao", min_value))
+    default_value = _to_float(raw_default, _to_float(question.get("valor_padrao"), float(min_value)))
+    if default_value < float(min_value):
+        default_value = float(min_value)
+    if default_value > float(max_value):
+        default_value = float(max_value)
+    candidates = [min_value, max_value, step, default_value]
+    if all(_is_int_like(value) for value in candidates):
+        int_values = [int(round(float(value))) for value in candidates]
+        return tuple(int_values)  # type: ignore[return-value]
+    return float(min_value), float(max_value), float(step), float(default_value)
+
+
+def _render_question_widget(question: Dict[str, Any], session_data: Dict[str, Any]) -> Any:
+    qid = question["id"]
+    label = question.get("label", qid)
+    help_text = question.get("descricao")
+    field_type = question.get("tipo_campo")
+    key = f"pillar_{qid}"
+    if field_type in {"select", "radio"}:
+        options = list(question.get("opcoes", []))
+        default = session_data.get(qid, question.get("valor_padrao"))
+        index = _resolve_option_index(options, default)
+        if not options:
+            return None
+        if field_type == "select":
+            return st.selectbox(label, options, index=index, help=help_text, key=key)
+        return st.radio(label, options, index=index, help=help_text, key=key)
+    if field_type == "slider":
+        min_value, max_value, step, default_value = _slider_params(question, session_data)
+        return st.slider(
+            label,
+            min_value=min_value,
+            max_value=max_value,
+            step=step,
+            value=default_value,
+            help=help_text,
+            key=key,
+        )
+    if field_type == "number":
+        default = _to_float(session_data.get(qid), question.get("valor_padrao", 0.0))
+        return st.number_input(label, value=default, help=help_text, key=key)
+    raise ValueError(f"Tipo de campo não suportado: {field_type}")
+
+
+def _render_pillars_questions(session_data: Dict[str, Any]) -> Dict[str, Any]:
+    answers: Dict[str, Any] = {}
+    total_sections = len(FORM_SCHEMA)
+    for idx, section in enumerate(FORM_SCHEMA):
+        st.markdown(f"### {section['pilar']}")
+        if section.get("descricao"):
+            st.caption(section["descricao"])
+        for question in section["perguntas"]:
+            if question["id"] == "tipo_fezes_bristol":
+                col_img, col_form = st.columns([1, 2], gap="medium")
+                with col_img:
+                    try:
+                        st.image(Image.open(PATH_BRISTOL), caption="Escala de Bristol", use_column_width=True)
+                    except Exception:
+                        st.info("Imagem da escala de Bristol não encontrada.")
+                with col_form:
+                    answers[question["id"]] = _render_question_widget(question, session_data)
+                continue
+            if question["id"] == "cor_urina":
+                col_img, col_form = st.columns([1, 2], gap="medium")
+                with col_img:
+                    try:
+                        st.image(Image.open(PATH_URINA), caption="Classificação da Urina", use_column_width=True)
+                    except Exception:
+                        st.info("Imagem da escala de cor da urina não encontrada.")
+                with col_form:
+                    answers[question["id"]] = _render_question_widget(question, session_data)
+                continue
+            answers[question["id"]] = _render_question_widget(question, session_data)
+        if idx < total_sections - 1:
+            st.markdown("---")
+    return answers
+
+
 def personal_data_section(session_data: Dict[str, Any]) -> SectionResult:
     st.header("1. Dados pessoais")
     prev_weight = _to_float(session_data.get("peso"), 0.0)
@@ -337,52 +448,6 @@ def nutrition_section(session_data: Dict[str, Any]) -> SectionResult:
                 ),
             )
 
-        st.markdown("---")
-        st.subheader("Estado atual (fezes e urina)")
-        col_bristol1, col_bristol2 = st.columns([1, 2])
-        with col_bristol1:
-            try:
-                st.image(Image.open(PATH_BRISTOL), caption="Escala de Bristol", use_column_width=True)
-            except Exception:
-                st.info("Imagem da escala de Bristol não encontrada.")
-        with col_bristol2:
-            tipo_fezes = st.radio(
-                "Selecione o tipo correspondente:",
-                [
-                    "Tipo 1 - Pequenos fragmentos duros, semelhantes a nozes.",
-                    "Tipo 2 - Em forma de salsicha, mas com grumos.",
-                    "Tipo 3 - Em forma de salsicha, com fissuras à superfície.",
-                    "Tipo 4 - Em forma de salsicha ou cobra, mais finas, mas suaves e macias.",
-                    "Tipo 5 - Fezes fragmentadas, mas em pedaços com contornos bem definidos e macias.",
-                    "Tipo 6 - Em pedaços esfarrapados.",
-                    "Tipo 7 - Líquidas.",
-                ],
-                key="tipo_fezes",
-                index=0,
-            )
-        st.markdown("---")
-        st.subheader("Cor da Urina")
-        col_urina1, col_urina2 = st.columns([1, 2])
-        with col_urina1:
-            try:
-                st.image(Image.open(PATH_URINA), caption="Classificação da Urina", use_column_width=True)
-            except Exception:
-                st.info("Imagem da escala de cor da urina não encontrada.")
-        with col_urina2:
-            cor_urina = st.radio(
-                "Selecione a cor que mais se aproxima da sua urina:",
-                [
-                    "Transparente (parabéns, você está hidratado(a)!)",
-                    "Amarelo muito claro (parabéns, você está hidratado(a)!)",
-                    "Amarelo claro (atenção, moderadamente desidratado)",
-                    "Amarelo (atenção, moderadamente desidratado)",
-                    "Amarelo escuro (perigo, procure atendimento!)",
-                    "Castanho claro (perigo extremo, MUITO desidratado!)",
-                    "Castanho escuro (perigo extremo, MUITO desidratado!)",
-                ],
-                key="cor_urina",
-                index=1,
-            )
         submitted = st.form_submit_button("Próximo", use_container_width=True)
 
     if not submitted:
@@ -390,7 +455,7 @@ def nutrition_section(session_data: Dict[str, Any]) -> SectionResult:
 
     historico_composto = _compose_historico(patologias, medicamentos)
 
-    required = [historico_composto, consumo_agua, atividade, tipo_fezes, cor_urina]
+    required = [historico_composto, consumo_agua, atividade]
     if any(field in (None, "") for field in required):
         msg = "Por favor preencha todos os campos."
         st.error(msg)
@@ -400,8 +465,6 @@ def nutrition_section(session_data: Dict[str, Any]) -> SectionResult:
         "historico_saude": historico_composto,
         "consumo_agua": _to_float(consumo_agua, 1.5),
         "nivel_atividade": atividade,
-        "tipo_fezes": tipo_fezes,
-        "cor_urina": cor_urina,
     }
     return SectionResult(section_data, [], advance=True)
 
@@ -448,6 +511,9 @@ def psychological_section(session_data: Dict[str, Any]) -> SectionResult:
                 "Quão importante é para você seguir uma rotina alimentar?", 1, 5,
                 int(session_data.get("rotina_alimentar", 3))
             )
+        st.markdown("---")
+        st.subheader("Pilares de bem-estar")
+        pillar_answers = _render_pillars_questions(session_data)
         submitted = st.form_submit_button("Próximo", use_container_width=True)
 
     if not submitted:
@@ -459,6 +525,16 @@ def psychological_section(session_data: Dict[str, Any]) -> SectionResult:
         st.error(msg)
         return SectionResult({}, [msg])
 
+    missing_pillars = [
+        key
+        for key, value in pillar_answers.items()
+        if value is None or (isinstance(value, str) and not value.strip())
+    ]
+    if missing_pillars:
+        msg = "Responda todas as perguntas dos seis pilares para continuar."
+        st.error(msg)
+        return SectionResult({}, [msg])
+
     section_data = {
         "motivacao": int(motivacao),
         "estresse": int(estresse),
@@ -467,6 +543,7 @@ def psychological_section(session_data: Dict[str, Any]) -> SectionResult:
         "impulsividade_alimentar": int(impulsividade),
         "rotina_alimentar": int(rotina),
     }
+    section_data.update(pillar_answers)
     return SectionResult(section_data, [], advance=True)
 
 

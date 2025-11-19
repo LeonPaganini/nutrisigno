@@ -8,37 +8,42 @@ disponibilizar o dicionário `pilares_scores` em toda a aplicação.
 
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, Mapping
+from typing import Any, Callable, Dict, Mapping, Optional
 
 from .metrics_engine import calcular_pilares
 
 PILLAR_NAMES = ("Energia", "Digestao", "Sono", "Hidratacao", "Emocao", "Rotina")
 
 
-def empty_pilares_scores() -> Dict[str, int]:
-    """Retorna um dicionário com todos os pilares zerados."""
+def empty_pilares_scores() -> Dict[str, Optional[int]]:
+    """Retorna um dicionário com todos os pilares sem cálculo."""
 
-    return {name: 0 for name in PILLAR_NAMES}
+    return {name: None for name in PILLAR_NAMES}
 
 
-def normalize_pilares_scores(raw_scores: Mapping[str, Any] | None) -> Dict[str, int]:
+def normalize_pilares_scores(raw_scores: Mapping[str, Any] | None) -> Dict[str, Optional[int]]:
     """Normaliza um dicionário arbitrário de pilares para inteiros 0-100."""
 
-    if raw_scores is None:
+    if raw_scores is None or not isinstance(raw_scores, Mapping):
         return empty_pilares_scores()
 
-    normalized: Dict[str, int] = {}
+    normalized: Dict[str, Optional[int]] = {}
     for name in PILLAR_NAMES:
-        value = raw_scores.get(name, 0) if isinstance(raw_scores, Mapping) else 0
+        value = raw_scores.get(name)
+        if value in (None, "", "None"):
+            normalized[name] = None
+            continue
         try:
             numeric = float(value)
         except (TypeError, ValueError):
-            numeric = 0.0
-        normalized[name] = int(max(0, min(100, round(numeric))))
+            normalized[name] = None
+            continue
+        numeric = max(0.0, min(100.0, numeric))
+        normalized[name] = int(round(numeric))
     return normalized
 
 
-def compute_pilares_scores(respostas: Mapping[str, Any] | None) -> Dict[str, int]:
+def compute_pilares_scores(respostas: Mapping[str, Any] | None) -> Dict[str, Optional[int]]:
     """Executa o motor de métricas e aplica normalização defensiva."""
 
     if not respostas:
@@ -51,8 +56,8 @@ def ensure_pilares_scores(
     payload: Dict[str, Any],
     *,
     respostas: Mapping[str, Any] | None = None,
-    persist: Callable[[Dict[str, int]], None] | None = None,
-) -> Dict[str, int]:
+    persist: Callable[[Dict[str, Optional[int]]], None] | None = None,
+) -> Dict[str, Optional[int]]:
     """Garante que `payload['pilares_scores']` exista e esteja normalizado."""
 
     stored_candidates = [

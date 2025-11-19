@@ -28,8 +28,22 @@ SAMPLE_PAYLOAD: Dict[str, Any] = {
     "signo": "Peixes",
     "nivel_atividade": "Moderado",
     "objetivo": "emagrecimento leve",
+    "horas_sono_noite": 7.5,
+    "cansaco_frequente": "Às vezes",
+    "acorda_cansada": "Neutra",
+    "tipo_fezes_bristol": "Tipo 4 (Salsicha lisa e macia)",
     "tipo_fezes": "Tipo 4",
+    "freq_evacuacao": "1x por dia",
+    "freq_inchaco_abdominal": "Raramente",
+    "copos_agua_dia": 9,
     "cor_urina": "Amarelo claro",
+    "retencao_inchaco": "Raramente",
+    "fome_emocional": "Raramente",
+    "compulsao_alimentar": "Nunca",
+    "culpa_apos_comer": "Raramente",
+    "refeicoes_por_dia": 4,
+    "freq_pular_refeicoes": "Raramente",
+    "constancia_fim_de_semana": "Muda um pouco",
 }
 
 

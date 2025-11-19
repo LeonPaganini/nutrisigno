@@ -482,7 +482,8 @@ def _build_cover_story(
         if urina_img.exists():
             table_data.append(["Urina", f"Seleção: {respostas.get('cor_urina', '—')}"])
         if fezes_img.exists():
-            table_data.append(["Fezes", f"Seleção: {respostas.get('tipo_fezes', '—')}"])
+            tipo_fezes = respostas.get("tipo_fezes_bristol") or respostas.get("tipo_fezes") or "—"
+            table_data.append(["Fezes", f"Seleção: {tipo_fezes}"])
         if table_data:
             table = Table(table_data, colWidths=[4 * cm, 11 * cm])
             table.setStyle(

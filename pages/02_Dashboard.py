@@ -124,7 +124,13 @@ def _normalize_insights(payload: Dict[str, Any], insights: Dict[str, Any]) -> Di
     insights["bmi_category"] = insights.get("bmi_category") or _imc_category(bmi_value)[0]
 
     consumo_info = insights.get("consumption") or {}
-    consumo_real = float(consumo_info.get("water_liters") or payload.get("consumo_agua") or 0.0)
+    consumo_real = _to_float(consumo_info.get("water_liters")) or 0.0
+    if not consumo_real:
+        consumo_real = _to_float(payload.get("consumo_agua")) or 0.0
+    if not consumo_real:
+        consumo_real = (
+            _to_float(payload.get("copos_agua_dia")) or 0.0
+        ) * 0.2
     recomendado = float(
         consumo_info.get("recommended_liters")
         or (round(max(1.5, peso * 0.035), 1) if peso else 2.0)
@@ -142,7 +148,8 @@ def _normalize_insights(payload: Dict[str, Any], insights: Dict[str, Any]) -> Di
         insights.setdefault("water_status", "Indefinido")
     insights.setdefault("motivacao", int(payload.get("motivacao") or 0))
     insights.setdefault("estresse", int(payload.get("estresse") or 0))
-    insights.setdefault("bristol", extract_bristol_tipo(payload.get("tipo_fezes")))
+    bristol_raw = payload.get("tipo_fezes_bristol") or payload.get("tipo_fezes")
+    insights.setdefault("bristol", extract_bristol_tipo(bristol_raw))
     insights.setdefault("urine", extract_cor_urina(payload.get("cor_urina")))
     insights.setdefault("sign_hint", "Use seu signo como inspiração de hábitos saudáveis.")
 
@@ -689,7 +696,9 @@ def _general_health_score(scores: Iterable[int]) -> Tuple[int, str, str]:
     return mean, "Ajustar", CRITICAL
 
 
-def _pillar_status(score: int) -> str:
+def _pillar_status(score: Optional[int]) -> str:
+    if score is None:
+        return "attention"
     if score >= 80:
         return "ok"
     if score >= 60:
@@ -697,9 +706,9 @@ def _pillar_status(score: int) -> str:
     return "critical"
 
 
-def _build_pilares_radar_chart(pilares_scores: Dict[str, int]) -> go.Figure:
+def _build_pilares_radar_chart(pilares_scores: Dict[str, Optional[int]]) -> go.Figure:
     labels = list(PILLAR_NAMES)
-    values = [pilares_scores.get(label, 0) for label in labels]
+    values = [pilares_scores.get(label) or 0 for label in labels]
     loop_values = values + values[:1]
     loop_labels = labels + labels[:1]
     fig = go.Figure()
@@ -724,18 +733,19 @@ def _build_pilares_radar_chart(pilares_scores: Dict[str, int]) -> go.Figure:
     return fig
 
 
-def _render_pilares_cards(pilares_scores: Dict[str, int]) -> None:
+def _render_pilares_cards(pilares_scores: Dict[str, Optional[int]]) -> None:
     cols = st.columns(3, gap="medium")
     for idx, name in enumerate(PILLAR_NAMES):
-        score = int(pilares_scores.get(name, 0))
+        score = pilares_scores.get(name)
         status = _pillar_status(score)
+        display_value = "Não calculado" if score is None else f"{int(score)}/100"
         description = PILAR_DESCRIPTIONS.get(name, "")
         with cols[idx % len(cols)]:
             st.markdown(
                 f"""
                 <div class='kpi {status}'>
                     <div class='label'>{name}</div>
-                    <div class='value'>{score}/100</div>
+                    <div class='value'>{display_value}</div>
                     <div class='sub'>{description}</div>
                 </div>
                 """,
@@ -743,10 +753,11 @@ def _render_pilares_cards(pilares_scores: Dict[str, int]) -> None:
             )
 
 
-def _render_pilares_highlights(pilares_scores: Dict[str, int]) -> None:
-    ordered = sorted(pilares_scores.items(), key=lambda item: item[1], reverse=True)
-    strengths = ordered[:2]
-    improvements = ordered[-2:]
+def _render_pilares_highlights(pilares_scores: Dict[str, Optional[int]]) -> None:
+    available = [(name, score) for name, score in pilares_scores.items() if score is not None]
+    strengths = sorted(available, key=lambda item: item[1], reverse=True)[:2]
+    improvements = sorted(available, key=lambda item: item[1])[:2]
+    missing = [name for name, score in pilares_scores.items() if score is None]
     col1, col2 = st.columns(2)
     with col1:
         st.markdown("#### Pontos fortes")
@@ -754,17 +765,21 @@ def _render_pilares_highlights(pilares_scores: Dict[str, int]) -> None:
             st.write("—")
         else:
             for name, score in strengths:
-                st.write(f"• **{name}** · {score}/100")
+                st.write(f"• **{name}** · {int(score)}/100")
     with col2:
         st.markdown("#### Pontos a melhorar")
         if not improvements:
             st.write("—")
         else:
             for name, score in improvements:
-                st.write(f"• **{name}** · {score}/100")
+                st.write(f"• **{name}** · {int(score)}/100")
+    if missing:
+        st.caption(
+            "Sem cálculo para: " + ", ".join(missing) + ". Complete o formulário para ver todos os pilares."
+        )
 
 
-def _render_pilares_section(pilares_scores: Dict[str, int]) -> None:
+def _render_pilares_section(pilares_scores: Dict[str, Optional[int]]) -> None:
     st.markdown("### Seis pilares NutriSigno")
     _render_pilares_cards(pilares_scores)
     radar = _build_pilares_radar_chart(pilares_scores)
@@ -807,7 +822,7 @@ def _calculate_age(raw: Any) -> int:
 def _build_share_payload(
     respostas: Dict[str, Any],
     insights: Dict[str, Any],
-    pilares_scores: Dict[str, int],
+    pilares_scores: Dict[str, Optional[int]],
     bmi: Dict[str, Any],
     score: int,
 ) -> Dict[str, Any]:
@@ -833,8 +848,8 @@ def _build_share_payload(
         insight_frase = "Use seu signo como inspiração de hábitos saudáveis."
 
     imc_value = float(bmi.get("value") or insights.get("bmi") or 0.0)
-    pilares_payload = {name: int(pilares_scores.get(name, 0)) for name in PILLAR_NAMES}
-    hidratacao_score = float(pilares_payload.get("Hidratacao", 0))
+    pilares_payload = {name: pilares_scores.get(name) for name in PILLAR_NAMES}
+    hidratacao_score = float(pilares_scores.get("Hidratacao") or 0)
     return {
         "primeiro_nome": primeiro_nome,
         "idade": idade,
@@ -1489,7 +1504,7 @@ def main() -> None:
     respostas = st.session_state.get("data") or payload.get("respostas") or {}
     plan = st.session_state.get("plan") or payload.get("plano_alimentar") or {}
 
-    def _persist_pilares(scores: Dict[str, int]) -> None:
+    def _persist_pilares(scores: Dict[str, Optional[int]]) -> None:
         repo.save_pilares_scores(pac_id, scores)
 
     pilares_scores = ensure_pilares_scores(
@@ -1592,7 +1607,10 @@ def main() -> None:
         badge,
     )
 
-    bristol_label = extract_bristol_tipo(respostas.get("tipo_fezes"), insights.get("bristol", ""))
+    bristol_label = extract_bristol_tipo(
+        respostas.get("tipo_fezes_bristol") or respostas.get("tipo_fezes"),
+        insights.get("bristol", ""),
+    )
     bristol_norm = _strip_accents(bristol_label)
     if any(term in bristol_norm for term in ("tipo 3", "tipo 4")):
         bristol_message = "Eliminação adequada; mantenha fibras variadas e hidratação."
