@@ -86,7 +86,7 @@ def _persist_form(service: FormService, data: Dict[str, Any]) -> str | None:
             data.get("telefone"),
             data.get("data_nascimento"),
         )
-        pac_id = service.save_from_form(
+        pac_id, pilares_scores = service.save_from_form(
             dto,
             pac_id=st.session_state.get("pac_id"),
             plano=st.session_state.get("plan") or {},
@@ -94,6 +94,7 @@ def _persist_form(service: FormService, data: Dict[str, Any]) -> str | None:
             macros=st.session_state.get("macros") or {},
         )
         st.session_state.pac_id = pac_id
+        st.session_state.pilares_scores = pilares_scores
         save_client_state(pac_id, str(st.session_state.get("step") or ""))
         get_user_cached(pac_id)
         log.info("submit.ok pac_id=%s", pac_id)
@@ -194,7 +195,7 @@ def _render_payment(service: FormService) -> None:
                     st.session_state.data.get("telefone"),
                     st.session_state.data.get("data_nascimento"),
                 )
-                pac_id = service.save_from_form(
+                pac_id, pilares_scores = service.save_from_form(
                     dto,
                     pac_id=st.session_state.get("pac_id"),
                     plano=st.session_state.plan,
@@ -202,6 +203,7 @@ def _render_payment(service: FormService) -> None:
                     macros=macros,
                 )
                 st.session_state.pac_id = pac_id
+                st.session_state.pilares_scores = pilares_scores
                 save_client_state(pac_id, str(st.session_state.get("step") or ""))
                 get_user_cached(pac_id)
                 log.info("submit.ok pac_id=%s", pac_id)
@@ -220,6 +222,7 @@ def _render_payment(service: FormService) -> None:
                     st.session_state.data,
                     st.session_state.plan,
                     pdf_path,
+                    pilares_scores=st.session_state.get("pilares_scores"),
                 )
                 with open(pdf_path, "rb") as f:
                     pdf_bytes = f.read()

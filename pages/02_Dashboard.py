@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, Optional, Tuple
 
 import streamlit as st
+import plotly.graph_objects as go
 
 from modules import app_bootstrap, openai_utils, repo
 from modules.client_state import get_user_cached, load_client_state, save_client_state
@@ -24,6 +25,7 @@ from modules.form.ui_insights import (
     signo_symbol,
 )
 from modules.share_image import gerar_imagem_share
+from modules.results_context import PILLAR_NAMES, ensure_pilares_scores
 
 log = logging.getLogger(__name__)
 
@@ -178,6 +180,15 @@ SUCCESS = "#28B487"
 WARNING = "#F4A261"
 CRITICAL = "#E76F51"
 NEUTRAL = "#CBD5F5"
+
+PILAR_DESCRIPTIONS = {
+    "Energia": "Disposição física e mental ao longo do dia.",
+    "Digestao": "Qualidade da digestão e conforto abdominal.",
+    "Sono": "Restauração noturna e regularidade de horários.",
+    "Hidratacao": "Ingestão hídrica e marcadores de hidratação.",
+    "Emocao": "Gestão de estresse e equilíbrio emocional.",
+    "Rotina": "Organização alimentar e constância de hábitos.",
+}
 
 
 def _to_float(value: Any) -> Optional[float]:
@@ -678,6 +689,89 @@ def _general_health_score(scores: Iterable[int]) -> Tuple[int, str, str]:
     return mean, "Ajustar", CRITICAL
 
 
+def _pillar_status(score: int) -> str:
+    if score >= 80:
+        return "ok"
+    if score >= 60:
+        return "attention"
+    return "critical"
+
+
+def _build_pilares_radar_chart(pilares_scores: Dict[str, int]) -> go.Figure:
+    labels = list(PILLAR_NAMES)
+    values = [pilares_scores.get(label, 0) for label in labels]
+    loop_values = values + values[:1]
+    loop_labels = labels + labels[:1]
+    fig = go.Figure()
+    fig.add_trace(
+        go.Scatterpolar(
+            r=loop_values,
+            theta=loop_labels,
+            fill="toself",
+            name="Pilares",
+            line=dict(color=PRIMARY, width=2),
+            fillcolor="rgba(108,93,211,0.25)",
+        )
+    )
+    fig.update_layout(
+        showlegend=False,
+        margin=dict(l=0, r=0, t=10, b=10),
+        polar=dict(
+            radialaxis=dict(range=[0, 100], showline=False, gridcolor="rgba(108,93,211,0.2)", tickfont=dict(color="#6b6d86")),
+            angularaxis=dict(linecolor="rgba(108,93,211,0.2)", tickfont=dict(color="#6b6d86")),
+        ),
+    )
+    return fig
+
+
+def _render_pilares_cards(pilares_scores: Dict[str, int]) -> None:
+    cols = st.columns(3, gap="medium")
+    for idx, name in enumerate(PILLAR_NAMES):
+        score = int(pilares_scores.get(name, 0))
+        status = _pillar_status(score)
+        description = PILAR_DESCRIPTIONS.get(name, "")
+        with cols[idx % len(cols)]:
+            st.markdown(
+                f"""
+                <div class='kpi {status}'>
+                    <div class='label'>{name}</div>
+                    <div class='value'>{score}/100</div>
+                    <div class='sub'>{description}</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+
+def _render_pilares_highlights(pilares_scores: Dict[str, int]) -> None:
+    ordered = sorted(pilares_scores.items(), key=lambda item: item[1], reverse=True)
+    strengths = ordered[:2]
+    improvements = ordered[-2:]
+    col1, col2 = st.columns(2)
+    with col1:
+        st.markdown("#### Pontos fortes")
+        if not strengths:
+            st.write("—")
+        else:
+            for name, score in strengths:
+                st.write(f"• **{name}** · {score}/100")
+    with col2:
+        st.markdown("#### Pontos a melhorar")
+        if not improvements:
+            st.write("—")
+        else:
+            for name, score in improvements:
+                st.write(f"• **{name}** · {score}/100")
+
+
+def _render_pilares_section(pilares_scores: Dict[str, int]) -> None:
+    st.markdown("### Seis pilares NutriSigno")
+    _render_pilares_cards(pilares_scores)
+    radar = _build_pilares_radar_chart(pilares_scores)
+    st.plotly_chart(radar, use_container_width=True)
+    _render_pilares_highlights(pilares_scores)
+
+
 # ---------------------------------------------------------------------------
 # Geração da imagem compartilhável
 # ---------------------------------------------------------------------------
@@ -713,7 +807,7 @@ def _calculate_age(raw: Any) -> int:
 def _build_share_payload(
     respostas: Dict[str, Any],
     insights: Dict[str, Any],
-    hydration: Dict[str, Any],
+    pilares_scores: Dict[str, int],
     bmi: Dict[str, Any],
     score: int,
 ) -> Dict[str, Any]:
@@ -739,17 +833,18 @@ def _build_share_payload(
         insight_frase = "Use seu signo como inspiração de hábitos saudáveis."
 
     imc_value = float(bmi.get("value") or insights.get("bmi") or 0.0)
-    hidratacao_score = float(hydration.get("score") or 0)
+    pilares_payload = {name: int(pilares_scores.get(name, 0)) for name in PILLAR_NAMES}
+    hidratacao_score = float(pilares_payload.get("Hidratacao", 0))
     return {
         "primeiro_nome": primeiro_nome,
         "idade": idade,
         "imc": imc_value,
         "score_geral": float(score or 0),
-        "hidratacao_score": hidratacao_score,
         "signo": signo,
         "elemento": elemento,
         "comportamentos": comportamentos,
         "insight_frase": insight_frase,
+        "pilares_scores": pilares_payload,
     }
 
 
@@ -1394,6 +1489,16 @@ def main() -> None:
     respostas = st.session_state.get("data") or payload.get("respostas") or {}
     plan = st.session_state.get("plan") or payload.get("plano_alimentar") or {}
 
+    def _persist_pilares(scores: Dict[str, int]) -> None:
+        repo.save_pilares_scores(pac_id, scores)
+
+    pilares_scores = ensure_pilares_scores(
+        payload,
+        respostas=respostas,
+        persist=_persist_pilares if pac_id else None,
+    )
+    st.session_state.pilares_scores = pilares_scores
+
     _inject_style()
 
     st.title("📊 Resultado NutriSigno")
@@ -1468,10 +1573,9 @@ def main() -> None:
         },
     ]
     _render_kpis(kpis)
+    _render_pilares_section(pilares_scores)
 
-    score, badge, badge_color = _general_health_score(
-        [hydration["score"], sleep["score"], stress["score"], activity["score"], bmi["score"]]
-    )
+    score, badge, badge_color = _general_health_score(pilares_scores.values())
     rec1, rec2 = _build_recommendations(hydration, sleep, stress, activity, bmi, state_info["state"])
     _render_health_score(score, badge, badge_color, rec1, rec2)
 
@@ -1508,7 +1612,7 @@ def main() -> None:
     _render_interpretations(interpretations)
 
     pdf_bytes = build_insights_pdf_bytes(insights)
-    share_payload = _build_share_payload(respostas, insights, hydration, bmi, score)
+    share_payload = _build_share_payload(respostas, insights, pilares_scores, bmi, score)
     share_bytes = gerar_imagem_share(share_payload, formato="story")
     _render_actions(state_info["state"], pac_id, insights, payload, pdf_bytes, share_bytes)
 

@@ -304,6 +304,7 @@ def get_by_pac_id(pac_id: str) -> Optional[Dict[str, Any]]:
         obj = s.get(Patient, pac_id)
         if not obj:
             return None
+        compact = obj.plano_compacto or {}
         return {
             "pac_id": obj.pac_id,
             "name": obj.name,
@@ -312,6 +313,7 @@ def get_by_pac_id(pac_id: str) -> Optional[Dict[str, Any]]:
             "plano_alimentar": obj.plano,
             "plano_alimentar_compacto": obj.plano_compacto,
             "macros": obj.macros,
+            "pilares_scores": compact.get("pilares_scores"),
             "status": obj.status,
             "status_pagamento": obj.status_pagamento,
             "status_plano": obj.status_plano,
@@ -371,6 +373,19 @@ def mark_plan_error(pac_id: str, status_plano: str = "erro") -> bool:
         if not obj:
             return False
         obj.status_plano = (status_plano or "erro").strip().lower()
+        return True
+
+
+def save_pilares_scores(pac_id: str, pilares_scores: Dict[str, Any]) -> bool:
+    """Persiste os pilares calculados dentro do JSON de plano compacto."""
+
+    with session_scope() as s:
+        obj = s.get(Patient, pac_id)
+        if not obj:
+            return False
+        compact = dict(obj.plano_compacto or {})
+        compact["pilares_scores"] = _json_safe(pilares_scores)
+        obj.plano_compacto = compact
         return True
 
 

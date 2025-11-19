@@ -14,6 +14,7 @@ except ImportError:  # pragma: no cover - optional dependency
     np = None
 
 from modules import repo
+from modules.results_context import compute_pilares_scores
 
 from .dto import FormDTO
 from .mapper import dto_to_repo_payload
@@ -63,8 +64,8 @@ class FormService:
         plano: Dict[str, Any] | None = None,
         plano_compacto: Dict[str, Any] | None = None,
         macros: Dict[str, Any] | None = None,
-    ) -> str:
-        """Persist form data through the repository."""
+    ) -> tuple[str, Dict[str, int]]:
+        """Persist form data through the repository and retorna os pilares."""
 
         normalized = normalize_dto(dto)
         log.info(
@@ -89,6 +90,9 @@ class FormService:
         payload["plano_compacto"] = sanitize_payload(plano_compacto or {})
         payload["macros"] = sanitize_payload(macros or {})
 
+        pilares_scores = compute_pilares_scores(payload["respostas"])
+        payload["plano_compacto"]["pilares_scores"] = pilares_scores
+
         log.info("form.persist.start pac_id=%s", pac_id)
         pac_id_out = self._repo.upsert_patient_payload(
             pac_id=pac_id,
@@ -100,7 +104,7 @@ class FormService:
             email=payload.get("email"),
         )
         log.info("form.persist.ok pac_id=%s", pac_id_out)
-        return pac_id_out
+        return pac_id_out, pilares_scores
 
     def read_by_phone_dob(self, phone: str, dob: str):
         """Return persisted data by phone and date of birth."""
