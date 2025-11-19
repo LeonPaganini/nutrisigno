@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import io
 import math
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
@@ -52,9 +52,9 @@ def _generate_macros_chart(macros: Dict[str, Any]) -> io.BytesIO:
     return buffer
 
 
-def _generate_pillars_radar(pilares_scores: Dict[str, int]) -> io.BytesIO:
+def _generate_pillars_radar(pilares_scores: Dict[str, Optional[int]]) -> io.BytesIO:
     labels = list(PILLAR_NAMES)
-    values = [pilares_scores.get(label, 0) for label in labels]
+    values = [pilares_scores.get(label) or 0 for label in labels]
     values += values[:1]
     angles = [n / float(len(labels)) * 2 * math.pi for n in range(len(labels))]
     angles += angles[:1]
@@ -78,7 +78,7 @@ def create_pdf_report(
     plan_dict: Dict[str, Any],
     output_path: str,
     *,
-    pilares_scores: Dict[str, int] | None = None,
+    pilares_scores: Dict[str, Optional[int]] | None = None,
 ) -> None:
     """Gera um relatório em PDF a partir dos dados e salva no caminho fornecido.
 
@@ -172,7 +172,9 @@ def create_pdf_report(
         story.append(Paragraph("<b>Pilares de Saúde:</b>", normal_style))
         table_data = [["Pilar", "Score"]]
         for key in PILLAR_NAMES:
-            table_data.append([key, f"{pilares_norm.get(key, 0)}/100"])
+            value = pilares_norm.get(key)
+            display = "Não calculado" if value is None else f"{value}/100"
+            table_data.append([key, display])
         pillar_table = Table(table_data, colWidths=[6*cm, 3*cm])
         pillar_table.setStyle(
             TableStyle(

@@ -50,8 +50,7 @@ INTENSITY_5 = [
 
 
 QUESTION_CATALOG: Dict[str, Dict[str, Any]] = {
-    # Energia / Sono core questions
-    "nivel_energia": {
+    "nivel_energia_dia": {
         "text": "Como você avalia seu nível de energia ao longo do dia?",
         "type": "likert",
         "options": INTENSITY_5,
@@ -60,65 +59,45 @@ QUESTION_CATALOG: Dict[str, Dict[str, Any]] = {
             "mapping": _likert_mapping(INTENSITY_5),
         },
     },
-    "horas_sono": {
-        "text": "Quantas horas de sono você costuma ter por noite?",
-        "type": "numeric",
-        "normalizer": {
-            "type": "numeric_range",
-            "min_ideal": 7,
-            "max_ideal": 8.5,
-            "hard_min": 4,
-            "hard_max": 11,
-        },
-    },
-    "qualidade_sono": {
-        "text": "Como você avalia a qualidade do seu sono?",
+    "cansaco_frequente": {
+        "text": "Com que frequência você se sente cansada ao longo do dia?",
         "type": "likert",
-        "options": INTENSITY_5,
+        "options": FREQUENCY_5,
         "normalizer": {
             "type": "categorical",
-            "mapping": _likert_mapping(INTENSITY_5),
+            "mapping": {
+                "nunca": 100,
+                "raramente": 85,
+                "às vezes": 60,
+                "as vezes": 60,
+                "frequentemente": 35,
+                "quase sempre": 15,
+            },
         },
     },
-    "freq_atividade_fisica": {
-        "text": "Com que frequência você pratica atividade física estruturada?",
+    "acorda_cansada": {
+        "text": "Como você costuma se sentir ao acordar?",
         "type": "multiple_choice",
         "options": [
-            "Nunca",
-            "1x por semana",
-            "2-3x por semana",
-            "4-5x por semana",
-            "Diariamente",
+            "Extremamente cansada",
+            "Cansada",
+            "Neutra",
+            "Disposta",
+            "Muito disposta",
         ],
         "normalizer": {
             "type": "categorical",
             "mapping": {
-                "nunca": 5,
-                "1x por semana": 35,
-                "2-3x por semana": 70,
-                "4-5x por semana": 90,
-                "diariamente": 100,
+                "extremamente cansada": 5,
+                "cansada": 30,
+                "neutra": 60,
+                "disposta": 85,
+                "muito disposta": 100,
             },
         },
     },
-    "nivel_estresse": {
-        "text": "Qual o seu nível atual de estresse?",
-        "type": "likert",
-        "options": INTENSITY_5,
-        "normalizer": {
-            "type": "categorical",
-            "mapping": {
-                "muito baixa": 100,
-                "baixa": 85,
-                "moderada": 60,
-                "alta": 30,
-                "muito alta": 10,
-            },
-        },
-    },
-    # Digestao
-    "tipo_fezes": {
-        "text": "Qual tipo de fezes melhor representa o seu padrão (Escala de Bristol)?",
+    "tipo_fezes_bristol": {
+        "text": "Qual tipo de fezes representa melhor seu padrão (Escala de Bristol)?",
         "type": "multiple_choice",
         "options": [
             "Tipo 1 (Carocinhos duros)",
@@ -149,7 +128,23 @@ QUESTION_CATALOG: Dict[str, Dict[str, Any]] = {
             },
         },
     },
-    "freq_intestino": {
+    "freq_inchaco_abdominal": {
+        "text": "Com que frequência você sente inchaço abdominal?",
+        "type": "likert",
+        "options": FREQUENCY_5,
+        "normalizer": {
+            "type": "categorical",
+            "mapping": {
+                "nunca": 100,
+                "raramente": 85,
+                "às vezes": 55,
+                "as vezes": 55,
+                "frequentemente": 25,
+                "quase sempre": 10,
+            },
+        },
+    },
+    "freq_evacuacao": {
         "text": "Com que frequência você evacua?",
         "type": "multiple_choice",
         "options": [
@@ -170,55 +165,26 @@ QUESTION_CATALOG: Dict[str, Dict[str, Any]] = {
             },
         },
     },
-    "freq_inchaco": {
-        "text": "Com que frequência você sente inchaço abdominal?",
-        "type": "likert",
-        "options": FREQUENCY_5,
+    "horas_sono_noite": {
+        "text": "Quantas horas de sono você costuma ter por noite?",
+        "type": "numeric",
         "normalizer": {
-            "type": "categorical",
-            "mapping": {
-                "nunca": 100,
-                "raramente": 85,
-                "à s vezes": 55,
-                "as vezes": 55,
-                "frequentemente": 25,
-                "quase sempre": 10,
-            },
+            "type": "numeric_range",
+            "min_ideal": 7,
+            "max_ideal": 8.5,
+            "hard_min": 4,
+            "hard_max": 11,
         },
     },
-    "freq_gases": {
-        "text": "Com que frequência você sente excesso de gases?",
+    "qualidade_sono": {
+        "text": "Como você avalia a qualidade do seu sono?",
         "type": "likert",
-        "options": FREQUENCY_5,
+        "options": INTENSITY_5,
         "normalizer": {
             "type": "categorical",
-            "mapping": {
-                "nunca": 100,
-                "raramente": 85,
-                "à s vezes": 60,
-                "as vezes": 60,
-                "frequentemente": 30,
-                "quase sempre": 10,
-            },
+            "mapping": _likert_mapping(INTENSITY_5),
         },
     },
-    "sensacao_peso_pos_refeicao": {
-        "text": "Com que frequência você sente peso ou empachamento após as refeições?",
-        "type": "likert",
-        "options": FREQUENCY_5,
-        "normalizer": {
-            "type": "categorical",
-            "mapping": {
-                "nunca": 100,
-                "raramente": 80,
-                "à s vezes": 55,
-                "as vezes": 55,
-                "frequentemente": 25,
-                "quase sempre": 10,
-            },
-        },
-    },
-    # Sono add-ons
     "despertares_noturnos": {
         "text": "Quantas vezes você costuma acordar durante a noite?",
         "type": "numeric",
@@ -230,53 +196,15 @@ QUESTION_CATALOG: Dict[str, Dict[str, Any]] = {
             "hard_max": 6,
         },
     },
-    "dificuldade_para_dormir": {
-        "text": "Quão difícil é pegar no sono na maioria das noites?",
-        "type": "likert",
-        "options": FREQUENCY_5,
-        "normalizer": {
-            "type": "categorical",
-            "mapping": {
-                "nunca": 100,
-                "raramente": 80,
-                "à s vezes": 55,
-                "as vezes": 55,
-                "frequentemente": 25,
-                "quase sempre": 10,
-            },
-        },
-    },
-    "sensacao_ao_acordar": {
-        "text": "Como você se sente ao acordar?",
-        "type": "likert",
-        "options": [
-            "Extremamente cansada",
-            "Cansada",
-            "Neutra",
-            "Disposta",
-            "Muito disposta",
-        ],
-        "normalizer": {
-            "type": "categorical",
-            "mapping": {
-                "extremamente cansada": 5,
-                "cansada": 30,
-                "neutra": 60,
-                "disposta": 85,
-                "muito disposta": 100,
-            },
-        },
-    },
-    # Hidratacao
-    "qtd_copos_agua": {
-        "text": "Quantos copos de água você bebe por dia (aprox. 200 ml)?",
+    "copos_agua_dia": {
+        "text": "Quantos copos de água (200 ml) você bebe por dia?",
         "type": "numeric",
         "normalizer": {
             "type": "numeric_range",
             "min_ideal": 8,
             "max_ideal": 12,
             "hard_min": 2,
-            "hard_max": 18,
+            "hard_max": 20,
         },
     },
     "cor_urina": {
@@ -284,6 +212,7 @@ QUESTION_CATALOG: Dict[str, Dict[str, Any]] = {
         "type": "multiple_choice",
         "options": [
             "Transparente",
+            "Amarelo muito claro",
             "Amarelo claro",
             "Amarelo",
             "Âmbar",
@@ -293,16 +222,24 @@ QUESTION_CATALOG: Dict[str, Dict[str, Any]] = {
             "type": "categorical",
             "mapping": {
                 "transparente": 95,
-                "amarelo claro": 100,
-                "amarelo": 70,
+                "amarelo muito claro": 100,
+                "amarelo claro": 85,
+                "amarelo": 60,
                 "âmbar": 30,
                 "ambar": 30,
                 "muito escura": 10,
+                "transparente (parabéns, você está hidratado(a)!)": 95,
+                "amarelo muito claro (parabéns, você está hidratado(a)!)": 100,
+                "amarelo claro (atenção, moderadamente desidratado)": 70,
+                "amarelo (atenção, moderadamente desidratado)": 60,
+                "amarelo escuro (perigo, procure atendimento!)": 25,
+                "castanho claro (perigo extremo, muito desidratado!)": 15,
+                "castanho escuro (perigo extremo, muito desidratado!)": 10,
             },
         },
     },
-    "retencao_liquidos": {
-        "text": "Com que frequência você percebe retenção de líquidos (inchaço em mãos/pés)?",
+    "retencao_inchaco": {
+        "text": "Com que frequência você percebe retenção de líquidos/inchaço?",
         "type": "likert",
         "options": FREQUENCY_5,
         "normalizer": {
@@ -310,14 +247,13 @@ QUESTION_CATALOG: Dict[str, Dict[str, Any]] = {
             "mapping": {
                 "nunca": 100,
                 "raramente": 80,
-                "à s vezes": 60,
+                "às vezes": 60,
                 "as vezes": 60,
                 "frequentemente": 35,
                 "quase sempre": 15,
             },
         },
     },
-    # Emocao
     "fome_emocional": {
         "text": "Com que frequência você come para aliviar emoções (ansiedade, tristeza, estresse)?",
         "type": "likert",
@@ -327,7 +263,7 @@ QUESTION_CATALOG: Dict[str, Dict[str, Any]] = {
             "mapping": {
                 "nunca": 100,
                 "raramente": 80,
-                "à s vezes": 55,
+                "às vezes": 55,
                 "as vezes": 55,
                 "frequentemente": 25,
                 "quase sempre": 10,
@@ -343,7 +279,7 @@ QUESTION_CATALOG: Dict[str, Dict[str, Any]] = {
             "mapping": {
                 "nunca": 100,
                 "raramente": 75,
-                "à s vezes": 45,
+                "às vezes": 45,
                 "as vezes": 45,
                 "frequentemente": 20,
                 "quase sempre": 5,
@@ -359,31 +295,14 @@ QUESTION_CATALOG: Dict[str, Dict[str, Any]] = {
             "mapping": {
                 "nunca": 100,
                 "raramente": 80,
-                "à s vezes": 55,
+                "às vezes": 55,
                 "as vezes": 55,
                 "frequentemente": 30,
                 "quase sempre": 10,
             },
         },
     },
-    # Rotina
-    "freq_pular_refeicoes": {
-        "text": "Com que frequência você pula refeições?",
-        "type": "likert",
-        "options": FREQUENCY_5,
-        "normalizer": {
-            "type": "categorical",
-            "mapping": {
-                "nunca": 100,
-                "raramente": 80,
-                "à s vezes": 55,
-                "as vezes": 55,
-                "frequentemente": 30,
-                "quase sempre": 10,
-            },
-        },
-    },
-    "refeicoes_no_dia": {
+    "refeicoes_por_dia": {
         "text": "Quantas refeições completas você costuma fazer por dia?",
         "type": "numeric",
         "normalizer": {
@@ -394,29 +313,24 @@ QUESTION_CATALOG: Dict[str, Dict[str, Any]] = {
             "hard_max": 7,
         },
     },
-    "aderencia_plano_alimentar": {
-        "text": "Quão aderente você se sente ao seu plano alimentar?",
+    "freq_pular_refeicoes": {
+        "text": "Com que frequência você pula refeições?",
         "type": "likert",
-        "options": [
-            "Quase nunca sigo",
-            "Sigo menos da metade dos dias",
-            "Sigo na maioria dos dias",
-            "Sigo quase sempre",
-            "Sigo praticamente todos os dias",
-        ],
+        "options": FREQUENCY_5,
         "normalizer": {
             "type": "categorical",
             "mapping": {
-                "quase nunca sigo": 5,
-                "sigo menos da metade dos dias": 30,
-                "sigo na maioria dos dias": 70,
-                "sigo quase sempre": 90,
-                "sigo praticamente todos os dias": 100,
+                "nunca": 100,
+                "raramente": 80,
+                "às vezes": 55,
+                "as vezes": 55,
+                "frequentemente": 30,
+                "quase sempre": 10,
             },
         },
     },
-    "variacao_rotina_fim_de_semana": {
-        "text": "O quanto sua rotina alimentar muda nos fins de semana?",
+    "constancia_fim_de_semana": {
+        "text": "Como sua rotina alimentar muda nos fins de semana?",
         "type": "multiple_choice",
         "options": [
             "Quase não muda",
@@ -433,6 +347,27 @@ QUESTION_CATALOG: Dict[str, Dict[str, Any]] = {
                 "muda bastante": 35,
                 "é totalmente diferente": 15,
                 "e totalmente diferente": 15,
+            },
+        },
+    },
+    "freq_atividade_fisica": {
+        "text": "Com que frequência você pratica atividade física estruturada?",
+        "type": "multiple_choice",
+        "options": [
+            "Nunca",
+            "1x por semana",
+            "2-3x por semana",
+            "4-5x por semana",
+            "Diariamente",
+        ],
+        "normalizer": {
+            "type": "categorical",
+            "mapping": {
+                "nunca": 5,
+                "1x por semana": 35,
+                "2-3x por semana": 70,
+                "4-5x por semana": 90,
+                "diariamente": 100,
             },
         },
     },
@@ -486,25 +421,70 @@ def _coerce_float(value: Any) -> Optional[float]:
     return None
 
 
+def _liters_to_cups(value: Any) -> Optional[float]:
+    liters = _coerce_float(value)
+    if liters is None:
+        return None
+    return liters * 5.0
+
+
+LEGACY_ALIASES: Dict[str, List[Dict[str, Any]]] = {
+    "nivel_energia_dia": [{"key": "nivel_energia"}, {"key": "energia_diaria"}],
+    "acorda_cansada": [{"key": "sensacao_ao_acordar"}],
+    "tipo_fezes_bristol": [{"key": "tipo_fezes"}],
+    "freq_inchaco_abdominal": [{"key": "freq_inchaco"}],
+    "freq_evacuacao": [{"key": "freq_intestino"}],
+    "horas_sono_noite": [{"key": "horas_sono"}, {"key": "sono_horas"}],
+    "copos_agua_dia": [
+        {"key": "qtd_copos_agua"},
+        {"key": "consumo_agua", "transform": _liters_to_cups},
+    ],
+    "retencao_inchaco": [{"key": "retencao_liquidos"}],
+    "refeicoes_por_dia": [{"key": "refeicoes_no_dia"}],
+    "constancia_fim_de_semana": [{"key": "variacao_rotina_fim_de_semana"}],
+}
+
+
+def _get_answer(respostas: Dict[str, Any], question_id: str) -> Any:
+    if question_id in respostas:
+        return respostas.get(question_id)
+    for alias in LEGACY_ALIASES.get(question_id, []):
+        alias_key = alias.get("key")
+        if not alias_key or alias_key not in respostas:
+            continue
+        value = respostas[alias_key]
+        transform = alias.get("transform")
+        if transform is None:
+            return value
+        try:
+            transformed = transform(value)
+        except Exception:
+            transformed = None
+        if transformed is not None:
+            return transformed
+    return None
+
+
 def _get_question_normalizer(question_id: str) -> Optional[Dict[str, Any]]:
     question = QUESTION_CATALOG.get(question_id)
     return None if question is None else question.get("normalizer")
 
 
-def _compute_weighted_score(respostas: Dict[str, Any], components: List[Dict[str, Any]]) -> float:
+def _compute_weighted_score(respostas: Dict[str, Any], components: List[Dict[str, Any]]) -> Optional[float]:
     accumulated = 0.0
     total_weight = 0.0
     for component in components:
         question_id = component["question_id"]
         weight = component["weight"]
         normalizer = component.get("normalizer") or _get_question_normalizer(question_id)
-        normalized = _normalize_answer(respostas.get(question_id), normalizer)
+        answer = _get_answer(respostas, question_id)
+        normalized = _normalize_answer(answer, normalizer)
         if normalized is None:
             continue
         accumulated += normalized * weight
         total_weight += weight
     if total_weight == 0:
-        return DEFAULT_SCORE
+        return None
     return accumulated / total_weight
 
 
@@ -513,8 +493,8 @@ def _resolve_condition_value(
 ) -> Optional[float | Any]:
     if normalized:
         normalizer = _get_question_normalizer(question_id)
-        return _normalize_answer(respostas.get(question_id), normalizer)
-    return respostas.get(question_id)
+        return _normalize_answer(_get_answer(respostas, question_id), normalizer)
+    return _get_answer(respostas, question_id)
 
 
 def _coerce_condition_value(value: Any, operator: str) -> Any:
@@ -582,8 +562,10 @@ def _matches_condition(respostas: Dict[str, Any], condition: Dict[str, Any]) -> 
 
 
 def _apply_adjustments(
-    base_score: float, respostas: Dict[str, Any], adjustments: List[Dict[str, Any]]
-) -> float:
+    base_score: Optional[float], respostas: Dict[str, Any], adjustments: List[Dict[str, Any]]
+) -> Optional[float]:
+    if base_score is None:
+        return None
     score = base_score
     for adjustment in adjustments:
         if _matches_condition(respostas, adjustment["conditions"]):
@@ -594,89 +576,87 @@ def _apply_adjustments(
 PILLARS_CONFIG: Dict[str, Dict[str, Any]] = {
     "Energia": {
         "components": [
-            {"question_id": "nivel_energia", "weight": 0.3},
-            {"question_id": "qualidade_sono", "weight": 0.25},
-            {"question_id": "horas_sono", "weight": 0.2},
-            {"question_id": "freq_atividade_fisica", "weight": 0.15},
-            {"question_id": "nivel_estresse", "weight": 0.1},
+            {"question_id": "nivel_energia_dia", "weight": 0.4},
+            {"question_id": "cansaco_frequente", "weight": 0.3},
+            {"question_id": "acorda_cansada", "weight": 0.3},
         ],
         "adjustments": [
             {
-                "conditions": {"question": "horas_sono", "operator": "lt", "value": 6},
-                "impact": -12,
-            },
-            {
-                "conditions": {"question": "horas_sono", "operator": "lt", "value": 5},
-                "impact": -10,
-            },
-            {
                 "conditions": {
-                    "question": "nivel_estresse",
+                    "question": "cansaco_frequente",
                     "operator": "in",
-                    "value": ["Alta", "Muito alta"],
+                    "value": ["Frequentemente", "Quase sempre"],
                 },
-                "impact": -12,
+                "impact": -6,
             },
             {
                 "conditions": {
-                    "all": [
-                        {
-                            "question": "nivel_estresse",
-                            "operator": "in",
-                            "value": ["Alta", "Muito alta"],
-                        },
-                        {
-                            "question": "freq_atividade_fisica",
-                            "operator": "in",
-                            "value": ["4-5x por semana", "Diariamente"],
-                        },
-                    ]
+                    "question": "acorda_cansada",
+                    "operator": "in",
+                    "value": ["Extremamente cansada", "Cansada"],
                 },
-                "impact": 6,
+                "impact": -6,
             },
         ],
     },
     "Digestao": {
         "components": [
-            {"question_id": "tipo_fezes", "weight": 0.3},
-            {"question_id": "freq_intestino", "weight": 0.25},
-            {"question_id": "freq_inchaco", "weight": 0.2},
-            {"question_id": "freq_gases", "weight": 0.15},
-            {"question_id": "sensacao_peso_pos_refeicao", "weight": 0.1},
+            {"question_id": "tipo_fezes_bristol", "weight": 0.45},
+            {"question_id": "freq_evacuacao", "weight": 0.3},
+            {"question_id": "freq_inchaco_abdominal", "weight": 0.25},
         ],
         "adjustments": [
             {
                 "conditions": {
                     "all": [
-                        {"question": "tipo_fezes", "operator": "in", "value": ["Tipo 1", "Tipo 2"]},
-                        {"question": "freq_intestino", "operator": "in", "value": ["1x por dia", "2x por dia"]},
+                        {
+                            "question": "tipo_fezes_bristol",
+                            "operator": "in",
+                            "value": [
+                                "Tipo 1",
+                                "Tipo 1 (Carocinhos duros)",
+                                "Tipo 2",
+                                "Tipo 2 (Salsicha grumosa)",
+                            ],
+                        },
+                        {
+                            "question": "freq_evacuacao",
+                            "operator": "in",
+                            "value": ["Menos de 3x por semana"],
+                        },
                     ]
                 },
-                "impact": -8,
+                "impact": -10,
             },
             {
                 "conditions": {
-                    "question": "sensacao_peso_pos_refeicao",
+                    "question": "freq_inchaco_abdominal",
                     "operator": "in",
                     "value": ["Frequentemente", "Quase sempre"],
                 },
-                "impact": -12,
+                "impact": -6,
             },
         ],
     },
     "Sono": {
         "components": [
-            {"question_id": "horas_sono", "weight": 0.25},
-            {"question_id": "qualidade_sono", "weight": 0.25},
-            {"question_id": "sensacao_ao_acordar", "weight": 0.2},
-            {"question_id": "despertares_noturnos", "weight": 0.15},
-            {"question_id": "dificuldade_para_dormir", "weight": 0.15},
+            {"question_id": "horas_sono_noite", "weight": 0.35},
+            {"question_id": "qualidade_sono", "weight": 0.35},
+            {"question_id": "despertares_noturnos", "weight": 0.3},
         ],
         "adjustments": [
             {
+                "conditions": {"question": "horas_sono_noite", "operator": "lt", "value": 6},
+                "impact": -12,
+            },
+            {
                 "conditions": {
                     "all": [
-                        {"question": "horas_sono", "operator": "between", "value": [7, 9]},
+                        {
+                            "question": "horas_sono_noite",
+                            "operator": "between",
+                            "value": [7, 9],
+                        },
                         {
                             "question": "despertares_noturnos",
                             "operator": "gt",
@@ -686,33 +666,26 @@ PILLARS_CONFIG: Dict[str, Dict[str, Any]] = {
                 },
                 "impact": -8,
             },
-            {
-                "conditions": {
-                    "question": "dificuldade_para_dormir",
-                    "operator": "in",
-                    "value": ["Frequentemente", "Quase sempre"],
-                },
-                "impact": -10,
-            },
         ],
     },
     "Hidratacao": {
         "components": [
-            {"question_id": "qtd_copos_agua", "weight": 0.45},
+            {"question_id": "copos_agua_dia", "weight": 0.45},
             {"question_id": "cor_urina", "weight": 0.35},
+            {"question_id": "retencao_inchaco", "weight": 0.2},
         ],
         "adjustments": [
             {
                 "conditions": {
-                    "question": "retencao_liquidos",
-                    "operator": "in",
-                    "value": ["Frequentemente", "Quase sempre"],
+                    "question": "copos_agua_dia",
+                    "operator": "lt",
+                    "value": 6,
                 },
-                "impact": -10,
+                "impact": -6,
             },
             {
                 "conditions": {
-                    "question": "freq_inchaco",
+                    "question": "retencao_inchaco",
                     "operator": "in",
                     "value": ["Frequentemente", "Quase sempre"],
                 },
@@ -722,10 +695,9 @@ PILLARS_CONFIG: Dict[str, Dict[str, Any]] = {
     },
     "Emocao": {
         "components": [
-            {"question_id": "fome_emocional", "weight": 0.35},
-            {"question_id": "compulsao_alimentar", "weight": 0.3},
-            {"question_id": "culpa_apos_comer", "weight": 0.2},
-            {"question_id": "nivel_estresse", "weight": 0.15},
+            {"question_id": "fome_emocional", "weight": 0.4},
+            {"question_id": "compulsao_alimentar", "weight": 0.35},
+            {"question_id": "culpa_apos_comer", "weight": 0.25},
         ],
         "adjustments": [
             {
@@ -757,36 +729,23 @@ PILLARS_CONFIG: Dict[str, Dict[str, Any]] = {
     },
     "Rotina": {
         "components": [
+            {"question_id": "refeicoes_por_dia", "weight": 0.3},
+            {"question_id": "freq_pular_refeicoes", "weight": 0.25},
+            {"question_id": "constancia_fim_de_semana", "weight": 0.2},
             {"question_id": "freq_atividade_fisica", "weight": 0.25},
-            {"question_id": "freq_pular_refeicoes", "weight": 0.2},
-            {"question_id": "refeicoes_no_dia", "weight": 0.2},
-            {"question_id": "aderencia_plano_alimentar", "weight": 0.2},
-            {"question_id": "variacao_rotina_fim_de_semana", "weight": 0.15},
         ],
         "adjustments": [
             {
                 "conditions": {
-                    "all": [
-                        {
-                            "question": "aderencia_plano_alimentar",
-                            "operator": "in",
-                            "value": [
-                                "Sigo quase sempre",
-                                "Sigo praticamente todos os dias",
-                            ],
-                        },
-                        {
-                            "question": "freq_pular_refeicoes",
-                            "operator": "in",
-                            "value": ["Frequentemente", "Quase sempre"],
-                        },
-                    ]
+                    "question": "freq_pular_refeicoes",
+                    "operator": "in",
+                    "value": ["Frequentemente", "Quase sempre"],
                 },
-                "impact": -12,
+                "impact": -10,
             },
             {
                 "conditions": {
-                    "question": "variacao_rotina_fim_de_semana",
+                    "question": "constancia_fim_de_semana",
                     "operator": "in",
                     "value": ["Muda bastante", "É totalmente diferente"],
                 },
@@ -797,7 +756,7 @@ PILLARS_CONFIG: Dict[str, Dict[str, Any]] = {
 }
 
 
-def calcular_pilares(respostas: Dict[str, Any]) -> Dict[str, int]:
+def calcular_pilares(respostas: Dict[str, Any]) -> Dict[str, Optional[int]]:
     """Public API used by the rest of the application.
 
     Args:
@@ -805,14 +764,14 @@ def calcular_pilares(respostas: Dict[str, Any]) -> Dict[str, int]:
             estáveis (IDs definidos em QUESTION_CATALOG).
 
     Returns:
-        Dict[str, int]: Pontuações normalizadas por pilar.
+        Dict[str, Optional[int]]: Pontuações normalizadas por pilar.
     """
 
-    resultados: Dict[str, int] = {}
+    resultados: Dict[str, Optional[int]] = {}
     for pilar, config in PILLARS_CONFIG.items():
         base = _compute_weighted_score(respostas, config["components"])
         final_score = _apply_adjustments(base, respostas, config.get("adjustments", []))
-        resultados[pilar] = int(round(final_score))
+        resultados[pilar] = None if final_score is None else int(round(final_score))
     return resultados
 
 

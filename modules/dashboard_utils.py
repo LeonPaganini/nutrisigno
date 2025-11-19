@@ -107,6 +107,12 @@ def compute_insights(data: Dict[str, Any]) -> Dict[str, Any]:
     weight = data.get("peso")
     height = data.get("altura")
     water = data.get("consumo_agua")
+    if not water:
+        cups = data.get("copos_agua_dia")
+        try:
+            water = float(cups) * 0.2 if cups not in (None, "") else None
+        except (TypeError, ValueError):
+            water = None
     sign = data.get("signo") or ""
 
     bmi: Optional[float] = None
@@ -122,10 +128,12 @@ def compute_insights(data: Dict[str, Any]) -> Dict[str, Any]:
 
     # Recommended water intake: 35 ml per kg body weight (approx.)
     recommended_water = float(weight) * 35 / 1000 if weight else 0
-    water_status = _water_status(float(water) if water else 0, recommended_water)
+    water_liters = float(water) if water else 0
+    water_status = _water_status(water_liters, recommended_water)
 
     # Interpret Bristol stool scale and urine colour
-    bristol_text = _interpret_bristol(data.get("tipo_fezes", ""))
+    bristol_value = data.get("tipo_fezes_bristol") or data.get("tipo_fezes") or ""
+    bristol_text = _interpret_bristol(bristol_value)
     urine_text = _interpret_urine(data.get("cor_urina", ""))
 
     # Sign hint
@@ -155,7 +163,7 @@ def compute_insights(data: Dict[str, Any]) -> Dict[str, Any]:
         "sign_hint": sign_hint,
         "mental_notes": mental_notes,
         # Include the raw water consumption so charts can display both consumption and recommendation
-        "consumption": float(water) if water else 0,
+        "consumption": water_liters,
     }
 
 def generate_dashboard_charts(insights: Dict[str, Any]) -> Dict[str, Figure]:

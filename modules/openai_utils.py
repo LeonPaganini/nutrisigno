@@ -82,12 +82,25 @@ def _mock_insights(user_data: Dict[str, Any]) -> Dict[str, Any]:
         "Obesidade"
     )
 
-    consumo_agua = float(user_data.get("consumo_agua") or 1.5)
+    consumo_agua_raw = user_data.get("consumo_agua")
+    if consumo_agua_raw in (None, "", 0):
+        try:
+            consumo_agua = float(user_data.get("copos_agua_dia") or 0) * 0.2
+        except (TypeError, ValueError):
+            consumo_agua = 0.0
+        if not consumo_agua:
+            consumo_agua = 1.5
+    else:
+        consumo_agua = float(consumo_agua_raw)
     recomendado = round(max(1.5, peso * 0.035), 1)
     water_status = "OK" if consumo_agua >= recomendado else "Abaixo do ideal"
 
     # Bristol & urina (texto curto)
-    bristol = (user_data.get("tipo_fezes") or "").lower()
+    bristol = (
+        user_data.get("tipo_fezes_bristol")
+        or user_data.get("tipo_fezes")
+        or ""
+    ).lower()
     bristol_text = "Padrão dentro do esperado" if "tipo 4" in bristol else "Atenção à consistência/hidratação"
     urine = (user_data.get("cor_urina") or "").lower()
     urine_text = "Hidratado" if "claro" in urine else "Possível desidratação"

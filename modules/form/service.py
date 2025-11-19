@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 from decimal import Decimal
 from datetime import date, datetime
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 from uuid import UUID
 
 try:
@@ -64,7 +64,7 @@ class FormService:
         plano: Dict[str, Any] | None = None,
         plano_compacto: Dict[str, Any] | None = None,
         macros: Dict[str, Any] | None = None,
-    ) -> tuple[str, Dict[str, int]]:
+    ) -> tuple[str, Dict[str, Optional[int]]]:
         """Persist form data through the repository and retorna os pilares."""
 
         normalized = normalize_dto(dto)
