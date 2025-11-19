@@ -16,9 +16,11 @@ import io
 import math
 import os
 from dataclasses import dataclass, field
-from typing import Any, Dict, Iterable, List, Literal, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Literal, Mapping, Sequence, Tuple
 
 from PIL import Image, ImageDraw, ImageFont, ImageOps
+
+from .results_context import PILLAR_NAMES, normalize_pilares_scores
 
 FormatoImagem = Literal["story", "feed"]
 ElementoSigno = Literal["Fogo", "Água", "Terra", "Ar"]
@@ -32,11 +34,11 @@ class ShareImagePayload:
     idade: int
     imc: float
     score_geral: float
-    hidratacao_score: float
     signo: str
     elemento: ElementoSigno
     comportamentos: Sequence[str] = field(default_factory=list)
     insight_frase: str = ""
+    pilares_scores: Dict[str, float] = field(default_factory=dict)
 
     @classmethod
     def from_mapping(cls, data: Dict[str, Any]) -> "ShareImagePayload":
@@ -45,11 +47,11 @@ class ShareImagePayload:
             "idade",
             "imc",
             "score_geral",
-            "hidratacao_score",
             "signo",
             "elemento",
             "comportamentos",
             "insight_frase",
+            "pilares_scores",
         }
         missing = [key for key in required if key not in data]
         if missing:
@@ -74,18 +76,29 @@ class ShareImagePayload:
             raise ValueError("É necessário fornecer ao menos um comportamento")
 
         idade = int(data["idade"])
-        hidratacao_score = float(data["hidratacao_score"])
+        pilares_raw = data.get("pilares_scores")
+        if not isinstance(pilares_raw, Mapping):
+            raise ValueError("É necessário fornecer pilares_scores com os 6 pilares.")
+
         return cls(
             primeiro_nome=primeiro_nome,
             idade=idade,
             imc=float(data["imc"]),
             score_geral=float(data["score_geral"]),
-            hidratacao_score=hidratacao_score,
             signo=signo,
             elemento=elemento,  # type: ignore[arg-type]
             comportamentos=comportamentos,
             insight_frase=str(data["insight_frase"]).strip(),
+            pilares_scores=normalize_pilares_scores(pilares_raw),
         )
+
+    def __post_init__(self) -> None:
+        normalized = normalize_pilares_scores(self.pilares_scores)
+        object.__setattr__(self, "pilares_scores", normalized)
+
+    @property
+    def hidratacao_score(self) -> float:
+        return float(self.pilares_scores.get("Hidratacao", 0))
 
 
 BACKGROUND_GRADIENT = ("#2A1457", "#3D1F78", "#6A3CBD", "#9F6CFF")
@@ -123,6 +136,7 @@ FORMATO_DIMENSOES: Dict[FormatoImagem, Tuple[int, int]] = {
 CARD_BASE_FILL = (255, 255, 255, 38)
 CARD_BORDER_ALPHA = 64
 CARD_SHADOW_ALPHA = 30
+PILAR_ORDER = list(PILLAR_NAMES)
 
 _FONT_CACHE: Dict[Tuple[int, str], ImageFont.FreeTypeFont] = {}
 
@@ -367,14 +381,11 @@ def _draw_radar(
 
 
 def _normalize_values(data: ShareImagePayload) -> Tuple[Sequence[float], Sequence[str]]:
-    limits = {
-        "IMC": 40,
-        "Score": 100,
-        "Hidratação": 100,
-    }
-    values = [data.imc, data.score_geral, data.hidratacao_score]
-    labels = list(limits.keys())
-    normalized = [max(0.0, min(value / limits[label], 1.0)) for value, label in zip(values, labels)]
+    labels = list(PILAR_ORDER)
+    normalized = [
+        max(0.0, min(float(data.pilares_scores.get(label, 0)) / 100.0, 1.0))
+        for label in labels
+    ]
     return normalized, labels
 
 

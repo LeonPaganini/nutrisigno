@@ -9,6 +9,7 @@ plotagem de gráficos de distribuição de macronutrientes.
 from __future__ import annotations
 
 import io
+import math
 from typing import Any, Dict, List
 
 from reportlab.lib import colors
@@ -24,6 +25,8 @@ from reportlab.platypus import (
     TableStyle,
 )
 import matplotlib.pyplot as plt
+
+from .results_context import PILLAR_NAMES, normalize_pilares_scores
 
 
 def _generate_macros_chart(macros: Dict[str, Any]) -> io.BytesIO:
@@ -49,7 +52,34 @@ def _generate_macros_chart(macros: Dict[str, Any]) -> io.BytesIO:
     return buffer
 
 
-def create_pdf_report(user_data: Dict[str, Any], plan_dict: Dict[str, Any], output_path: str) -> None:
+def _generate_pillars_radar(pilares_scores: Dict[str, int]) -> io.BytesIO:
+    labels = list(PILLAR_NAMES)
+    values = [pilares_scores.get(label, 0) for label in labels]
+    values += values[:1]
+    angles = [n / float(len(labels)) * 2 * math.pi for n in range(len(labels))]
+    angles += angles[:1]
+    fig, ax = plt.subplots(figsize=(5, 5), subplot_kw=dict(polar=True))
+    ax.plot(angles, values, color="#6C5DD3", linewidth=2)
+    ax.fill(angles, values, color="#6C5DD3", alpha=0.25)
+    ax.set_xticks(angles[:-1])
+    ax.set_xticklabels(labels)
+    ax.set_ylim(0, 100)
+    ax.set_yticks([20, 40, 60, 80, 100])
+    ax.set_yticklabels(["20", "40", "60", "80", "100"])
+    buffer = io.BytesIO()
+    plt.savefig(buffer, format="png", bbox_inches="tight")
+    plt.close(fig)
+    buffer.seek(0)
+    return buffer
+
+
+def create_pdf_report(
+    user_data: Dict[str, Any],
+    plan_dict: Dict[str, Any],
+    output_path: str,
+    *,
+    pilares_scores: Dict[str, int] | None = None,
+) -> None:
     """Gera um relatório em PDF a partir dos dados e salva no caminho fornecido.
 
     Args:
@@ -135,6 +165,28 @@ def create_pdf_report(user_data: Dict[str, Any], plan_dict: Dict[str, Any], outp
         chart_buffer = _generate_macros_chart(macros)
         img = Image(chart_buffer, width=8*cm, height=8*cm)
         story.append(img)
+        story.append(Spacer(1, 12))
+
+    pilares_norm = normalize_pilares_scores(pilares_scores)
+    if pilares_norm:
+        story.append(Paragraph("<b>Pilares de Saúde:</b>", normal_style))
+        table_data = [["Pilar", "Score"]]
+        for key in PILLAR_NAMES:
+            table_data.append([key, f"{pilares_norm.get(key, 0)}/100"])
+        pillar_table = Table(table_data, colWidths=[6*cm, 3*cm])
+        pillar_table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor('#F3F0FF')),
+                    ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor('#2F2A52')),
+                    ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor('#C7C6D3')),
+                    ("ALIGN", (0, 0), (-1, -1), 'LEFT'),
+                ]
+            )
+        )
+        story.append(pillar_table)
+        radar_buffer = _generate_pillars_radar(pilares_norm)
+        story.append(Image(radar_buffer, width=8*cm, height=8*cm))
         story.append(Spacer(1, 12))
 
     # Insights

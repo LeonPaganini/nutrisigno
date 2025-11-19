@@ -2,6 +2,8 @@
 
 import io
 
+import io
+
 import pytest
 from PIL import Image
 
@@ -14,7 +16,6 @@ def _sample_payload_dict() -> dict:
         "idade": 29,
         "imc": 22.4,
         "score_geral": 87,
-        "hidratacao_score": 78,
         "signo": "Áries",
         "elemento": "Fogo",
         "comportamentos": [
@@ -23,6 +24,14 @@ def _sample_payload_dict() -> dict:
             "Evita picos de açúcar à noite",
         ],
         "insight_frase": "Sua energia pede rotinas mais leves e horários flexíveis.",
+        "pilares_scores": {
+            "Energia": 82,
+            "Digestao": 74,
+            "Sono": 68,
+            "Hidratacao": 78,
+            "Emocao": 64,
+            "Rotina": 70,
+        },
     }
 
 

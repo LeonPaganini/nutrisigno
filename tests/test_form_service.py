@@ -35,8 +35,18 @@ def test_save_from_form_success(service):
             "consumo_agua": 2.0,
         }
     )
-    pac_id = service.save_from_form(dto)
+    pac_id, pilares_scores = service.save_from_form(dto)
     assert pac_id == "generated-id"
+    assert isinstance(pilares_scores, dict)
+    assert set(pilares_scores.keys()) == {
+        "Energia",
+        "Digestao",
+        "Sono",
+        "Hidratacao",
+        "Emocao",
+        "Rotina",
+    }
+    assert service._repo.saved["plano_compacto"]["pilares_scores"] == pilares_scores
 
 
 def test_save_from_form_validation_error(service):
