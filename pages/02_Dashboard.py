@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, Optional, Tuple
 
 import streamlit as st
-import plotly.graph_objects as go
 
 from modules import app_bootstrap, openai_utils, repo
 from modules.client_state import get_user_cached, load_client_state, save_client_state
@@ -187,15 +186,6 @@ SUCCESS = "#28B487"
 WARNING = "#F4A261"
 CRITICAL = "#E76F51"
 NEUTRAL = "#CBD5F5"
-
-PILAR_DESCRIPTIONS = {
-    "Energia": "Disposição física e mental ao longo do dia.",
-    "Digestao": "Qualidade da digestão e conforto abdominal.",
-    "Sono": "Restauração noturna e regularidade de horários.",
-    "Hidratacao": "Ingestão hídrica e marcadores de hidratação.",
-    "Emocao": "Gestão de estresse e equilíbrio emocional.",
-    "Rotina": "Organização alimentar e constância de hábitos.",
-}
 
 
 def _to_float(value: Any) -> Optional[float]:
@@ -694,97 +684,6 @@ def _general_health_score(scores: Iterable[int]) -> Tuple[int, str, str]:
     if mean >= 60:
         return mean, "Atenção", WARNING
     return mean, "Ajustar", CRITICAL
-
-
-def _pillar_status(score: Optional[int]) -> str:
-    if score is None:
-        return "attention"
-    if score >= 80:
-        return "ok"
-    if score >= 60:
-        return "attention"
-    return "critical"
-
-
-def _build_pilares_radar_chart(pilares_scores: Dict[str, Optional[int]]) -> go.Figure:
-    labels = list(PILLAR_NAMES)
-    values = [pilares_scores.get(label) or 0 for label in labels]
-    loop_values = values + values[:1]
-    loop_labels = labels + labels[:1]
-    fig = go.Figure()
-    fig.add_trace(
-        go.Scatterpolar(
-            r=loop_values,
-            theta=loop_labels,
-            fill="toself",
-            name="Pilares",
-            line=dict(color=PRIMARY, width=2),
-            fillcolor="rgba(108,93,211,0.25)",
-        )
-    )
-    fig.update_layout(
-        showlegend=False,
-        margin=dict(l=0, r=0, t=10, b=10),
-        polar=dict(
-            radialaxis=dict(range=[0, 100], showline=False, gridcolor="rgba(108,93,211,0.2)", tickfont=dict(color="#6b6d86")),
-            angularaxis=dict(linecolor="rgba(108,93,211,0.2)", tickfont=dict(color="#6b6d86")),
-        ),
-    )
-    return fig
-
-
-def _render_pilares_cards(pilares_scores: Dict[str, Optional[int]]) -> None:
-    cols = st.columns(3, gap="medium")
-    for idx, name in enumerate(PILLAR_NAMES):
-        score = pilares_scores.get(name)
-        status = _pillar_status(score)
-        display_value = "Não calculado" if score is None else f"{int(score)}/100"
-        description = PILAR_DESCRIPTIONS.get(name, "")
-        with cols[idx % len(cols)]:
-            st.markdown(
-                f"""
-                <div class='kpi {status}'>
-                    <div class='label'>{name}</div>
-                    <div class='value'>{display_value}</div>
-                    <div class='sub'>{description}</div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-
-
-def _render_pilares_highlights(pilares_scores: Dict[str, Optional[int]]) -> None:
-    available = [(name, score) for name, score in pilares_scores.items() if score is not None]
-    strengths = sorted(available, key=lambda item: item[1], reverse=True)[:2]
-    improvements = sorted(available, key=lambda item: item[1])[:2]
-    missing = [name for name, score in pilares_scores.items() if score is None]
-    col1, col2 = st.columns(2)
-    with col1:
-        st.markdown("#### Pontos fortes")
-        if not strengths:
-            st.write("—")
-        else:
-            for name, score in strengths:
-                st.write(f"• **{name}** · {int(score)}/100")
-    with col2:
-        st.markdown("#### Pontos a melhorar")
-        if not improvements:
-            st.write("—")
-        else:
-            for name, score in improvements:
-                st.write(f"• **{name}** · {int(score)}/100")
-    if missing:
-        st.caption(
-            "Sem cálculo para: " + ", ".join(missing) + ". Complete o formulário para ver todos os pilares."
-        )
-
-
-def _render_pilares_section(pilares_scores: Dict[str, Optional[int]]) -> None:
-    st.markdown("### Seis pilares NutriSigno")
-    _render_pilares_cards(pilares_scores)
-    radar = _build_pilares_radar_chart(pilares_scores)
-    st.plotly_chart(radar, use_container_width=True)
-    _render_pilares_highlights(pilares_scores)
 
 
 # ---------------------------------------------------------------------------
@@ -1588,7 +1487,6 @@ def main() -> None:
         },
     ]
     _render_kpis(kpis)
-    _render_pilares_section(pilares_scores)
 
     score, badge, badge_color = _general_health_score(pilares_scores.values())
     rec1, rec2 = _build_recommendations(hydration, sleep, stress, activity, bmi, state_info["state"])
