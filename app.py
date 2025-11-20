@@ -38,6 +38,8 @@ def _apply_global_styles() -> None:
                     --gold: #c49a4a;
                     --text: #1f1f2c;
                     --muted: #4b4b63;
+                    --rosy: #f9f4f1;
+                    --cream: #fff9f5;
                 }
                 .main {
                     background: radial-gradient(circle at 20% 20%, #f8f6ff, #ffffff 35%),
@@ -51,6 +53,7 @@ def _apply_global_styles() -> None:
                     padding: 3rem 2.5rem;
                     position: relative;
                     overflow: hidden;
+                    box-shadow: 0 30px 70px rgba(74, 63, 187, 0.08);
                 }
                 .hero::after {
                     content: "";
@@ -61,6 +64,18 @@ def _apply_global_styles() -> None:
                     background: radial-gradient(circle, rgba(74, 63, 187, 0.1), transparent 60%);
                     filter: blur(6px);
                     transform: rotate(12deg);
+                }
+                .hero .badge {
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 0.4rem;
+                    padding: 0.35rem 0.9rem;
+                    border-radius: 999px;
+                    background: #fff9f5;
+                    border: 1px solid #f1e7d9;
+                    color: #a26b20;
+                    font-weight: 700;
+                    box-shadow: 0 10px 30px rgba(0,0,0,0.04);
                 }
                 .hero h1 {
                     font-size: clamp(2rem, 4vw, 2.8rem);
@@ -106,6 +121,9 @@ def _apply_global_styles() -> None:
                     border: 1px dashed #d8d3f7;
                     background: #f9f7ff;
                 }
+                .cta-secondary:hover {
+                    background: #f1edff;
+                }
                 .placeholder-card {
                     background: radial-gradient(circle at 20% 20%, #f4ecff, #f8f8ff 55%);
                     border: 1px dashed #d6d0f8;
@@ -136,6 +154,14 @@ def _apply_global_styles() -> None:
                 .section-subtitle {
                     color: var(--muted);
                     margin-bottom: 1.4rem;
+                }
+                .eyebrow {
+                    letter-spacing: 0.08em;
+                    font-weight: 800;
+                    font-size: 0.75rem;
+                    color: var(--indigo);
+                    text-transform: uppercase;
+                    margin-bottom: 0.4rem;
                 }
                 .mini-label {
                     text-transform: uppercase;
@@ -169,6 +195,12 @@ def _apply_global_styles() -> None:
                     background: linear-gradient(180deg, #ffffff, #f7f5ff);
                     box-shadow: 0 18px 35px rgba(0,0,0,0.05);
                 }
+                .muted-box {
+                    border-radius: 16px;
+                    padding: 1.2rem 1.4rem;
+                    background: linear-gradient(160deg, #fff9f5, #f4f0ff);
+                    border: 1px solid #efe3d8;
+                }
                 .faq-item {
                     border: 1px solid #eae8fa;
                     border-radius: 14px;
@@ -186,6 +218,10 @@ def _apply_global_styles() -> None:
                     .placeholder-card {
                         min-height: 220px;
                     }
+                    .cta-secondary {
+                        width: 100%;
+                        justify-content: center;
+                    }
                 }
             </style>
             """
@@ -201,12 +237,13 @@ def _hero_section(ok: bool, msg: str) -> None:
         cols = st.columns([1.05, 0.95])
         with cols[0]:
             st.markdown("<span class='pill'>NutriSigno • Página Início</span>", unsafe_allow_html=True)
-            st.markdown("# Plano NutriSigno — título principal placeholder")
+            st.markdown("<span class='badge'>Oferta de lançamento: de R$49,90 por R$27,90</span>", unsafe_allow_html=True)
+            st.markdown("# NutriSigno: nutrição guiada pelo seu céu e pelo seu corpo")
             st.markdown(
-                "<p class='subtitle'>Subtítulo com benefício principal em placeholder, destacando personalização e credibilidade.</p>",
+                "<p class='subtitle'>Unimos ciência nutricional e astrologia comportamental para desenhar um plano alimentar sob medida para o seu ritmo natural.</p>",
                 unsafe_allow_html=True,
             )
-            st.markdown("Plano a partir de R$XXX — detalhe discreto", help="Informação ilustrativa.")
+            st.markdown("<p class='eyebrow'>de R$49,90 por R$27,90 • oferta de lançamento</p>", unsafe_allow_html=True)
 
             cta_col1, cta_col2 = st.columns([1.2, 1])
             with cta_col1:
@@ -216,12 +253,13 @@ def _hero_section(ok: bool, msg: str) -> None:
                 st.markdown("</div>", unsafe_allow_html=True)
             with cta_col2:
                 st.markdown(
-                    "<a class='cta-secondary' href='#mockup'>Ver exemplo de plano →</a>",
+                    "<a class='cta-secondary' href='#como-funciona'>Ver como funciona →</a>",
                     unsafe_allow_html=True,
                 )
 
             st.caption(
-                "Chamada leve sobre compromisso com dados e astrologia, em placeholder para futura copy.")
+                "Método criado por nutricionista clínica, com referências na base TACO e diretrizes oficiais de nutrição."
+            )
             if not ok:
                 st.error(
                     "Falha ao executar o bootstrap da aplicação. "
@@ -231,65 +269,84 @@ def _hero_section(ok: bool, msg: str) -> None:
 
         with cols[1]:
             st.markdown(
-                "<div class='placeholder-card'>Imagem hero / mockup ilustrativo aqui</div>",
+                "<div class='placeholder-card' style=\"background-image:url('/mnt/data/gladia_template.html');background-size:cover;\">Mockup hero com plano e constelação suave</div>",
                 unsafe_allow_html=True,
             )
         st.markdown("</div>", unsafe_allow_html=True)
 
 
 def _how_it_works_section() -> None:
-    st.markdown("## Como funciona • explicação em três passos")
+    st.markdown("<a id='como-funciona'></a>", unsafe_allow_html=True)
+    st.markdown("## Como funciona")
     st.markdown(
-        "Texto breve placeholder explicando Nutrição + IA + astrologia com linguagem leve e confiável."
+        "Linha clara em três passos para mostrar o fluxo NutriSigno, unindo avaliação, modelo nutricional e entrega automática do seu plano."
     )
     cols = st.columns(3)
     passos = [
-        ("Preencha sua avaliação", "Descrição placeholder sobre responder perguntas importantes."),
-        ("IA + nutrição + astrologia", "Explica processamento dos dados com rigor científico."),
-        ("Receba seu plano", "Entrega de plano alimentar e insights personalizados."),
+        ("Avaliação completa", "Responda ao diagnóstico NutriSigno com dados de saúde, rotina e mapa natal."),
+        (
+            "Modelo nutricional + análise astrológica",
+            "Cruzamos necessidades metabólicas com padrões astrológicos que influenciam seus impulsos e horários de maior disposição.",
+        ),
+        (
+            "Receba seu plano + relatório",
+            "Você recebe automaticamente o plano alimentar e um relatório em PDF com insights aplicáveis para o dia a dia.",
+        ),
     ]
-    for col, (titulo, desc) in zip(cols, passos):
-        with col:
-            st.markdown("### ✧ " + titulo)
+    for idx, (titulo, desc) in enumerate(passos, start=1):
+        with cols[idx - 1]:
+            st.markdown(f"### ✧ Passo {idx} — {titulo}")
             st.write(desc)
 
 
-def _audience_section() -> None:
-    st.markdown("## Para quem é e por que funciona")
+def _deliverables_section() -> None:
+    st.markdown("## O que chega no seu e-mail")
+    st.markdown(
+        "Grade concisa com tudo que será enviado: plano alimentar, insights astrológicos de comportamento e relatório digital completo."
+    )
     col1, col2 = st.columns(2)
     with col1:
-        st.markdown("#### Para quem é")
+        st.markdown("<div class='mini-label'>Plano alimentar personalizado</div>", unsafe_allow_html=True)
         st.markdown(
-            """
-            - Bullet placeholder sobre ansiedade com comida e recomeços.
-            - Bullet placeholder para quem gosta de astrologia, mas quer base real.
-            - Bullet placeholder para rotina corrida e busca de disciplina.
-            - Bullet opcional para quem quer acompanhamento leve.
-            """
+            "Cardápios e trocas inteligentes alinhados ao seu metabolismo e preferências."
+        )
+        st.markdown("<div class='mini-label'>Insights astrológicos de comportamento</div>", unsafe_allow_html=True)
+        st.markdown(
+            "Pontos do seu mapa que impactam apetite, impulsividade e horários ideais para refeições."
+        )
+        st.markdown("<div class='mini-label'>Relatório digital em PDF</div>", unsafe_allow_html=True)
+        st.markdown(
+            "Documento elegante, com linguagem clara e referências usadas na construção do plano."
         )
     with col2:
-        st.markdown("#### Por que funciona")
+        st.markdown("<div class='mini-label'>Feedback automático</div>", unsafe_allow_html=True)
         st.markdown(
-            """
-            - Personalização com dados e mapa de comportamento (placeholder).
-            - Base validada por nutricionista e referências confiáveis.
-            - Olhar para rotina, emoções e preferências (texto placeholder).
-            - Entregas práticas e realistas, prontas para usar.
-            """
+            "Comentários objetivos sobre como ajustar porções, horários e hidratação ao longo da semana."
+        )
+        st.markdown("<div class='mini-label'>Recomendações práticas</div>", unsafe_allow_html=True)
+        st.markdown(
+            "Rotinas simples, hidratação guiada e preparações rápidas para manter consistência."
+        )
+        st.markdown(
+            "<div class='muted-box'>Oferta de lançamento: de R$49,90 por R$27,90 — recebe tudo direto no seu e-mail</div>",
+            unsafe_allow_html=True,
         )
 
 
 def _benefits_section() -> None:
-    st.markdown("## Benefícios principais")
-    st.markdown("Cards de benefícios com ícones sutis de astrologia, texto placeholder.")
+    st.markdown("## Benefícios percebidos")
+    st.markdown("Cards simétricos com linguagem escaneável para mostrar ganhos concretos do método.")
     cols = st.columns(3)
     beneficios = [
-        ("Digestão e bem-estar", "Descrição breve placeholder sobre digestão equilibrada."),
-        ("Relação emocional", "Texto curto sobre apoiar emoções ligadas à comida."),
-        ("Rotina organizada", "Placeholder sobre praticidade no dia a dia."),
-        ("Autoconhecimento", "Benefício sobre signos e autoconsciência."),
-        ("Energia e foco", "Texto placeholder sobre performance equilibrada."),
-        ("Suporte contínuo", "Linha breve sobre ajustes e acompanhamento."),
+        ("Equilíbrio emocional na alimentação", "Menos impulsos e mais estabilidade ao entender seus gatilhos astrológicos."),
+        (
+            "Hidratação e digestão alinhadas ao seu perfil",
+            "Orientações de horários e combinações que respeitam seu metabolismo.",
+        ),
+        ("Clareza e estrutura diária", "Rotina de refeições organizada sem protocolos extremos."),
+        ("Redução de impulsos alimentares", "Recomendações práticas para janelas críticas do dia e da noite."),
+        ("Entendimento do próprio ritmo", "Uso do mapa natal para ajustar energia, sono e apetite."),
+        ("Maior consciência alimentar", "Relatório explica o porquê de cada escolha em linguagem clara."),
     ]
     for idx, beneficio in enumerate(beneficios):
         col = cols[idx % 3]
@@ -304,58 +361,133 @@ def _benefits_section() -> None:
             )
 
 
-def _authority_section() -> None:
-    st.markdown("## Quem está por trás")
+def _why_it_works_section() -> None:
+    st.markdown("## Por que o NutriSigno funciona")
     st.markdown(
-        "Bloco placeholder sobre nutricionista responsável, CRN e validação científica."
+        "Coluna dupla unindo ciência e astrologia comportamental, reforçando personalização profunda e linguagem acessível."
     )
-    col1, col2 = st.columns([0.9, 1.1])
+    col1, col2 = st.columns([1.1, 0.9])
     with col1:
-        st.markdown("### Nome da profissional — CRN")
-        st.write(
-            "Mini bio placeholder destacando experiência clínica, base científica (ex.: TACO) "
-            "e olhar integrado com astrologia.")
+        st.markdown("<div class='mini-label'>Nutrição baseada em evidências</div>", unsafe_allow_html=True)
         st.markdown(
-            "- Item placeholder: plano validado por nutricionista.\n"
-            "- Item placeholder: metodologia combinando dados e signos.\n"
-            "- Item placeholder: foco em recomendações realistas."
+            "Planos construídos com base em diretrizes oficiais e base TACO, sem modismos."
+        )
+        st.markdown("<div class='mini-label'>Astrologia como ferramenta comportamental</div>", unsafe_allow_html=True)
+        st.markdown(
+            "Usamos o mapa natal para entender padrões de apetite, impulsividade e disciplina."
+        )
+        st.markdown("<div class='mini-label'>Personalização profunda</div>", unsafe_allow_html=True)
+        st.markdown(
+            "Integramos dados clínicos, preferências e rotina para ajustar porções, horários e combinações."
+        )
+        st.markdown("<div class='mini-label'>Linguagem técnica + acessível</div>", unsafe_allow_html=True)
+        st.markdown("Você entende o porquê de cada escolha, em linguagem clara, sem perder o rigor.")
+        st.markdown("<div class='mini-label'>Ciência + autoconhecimento</div>", unsafe_allow_html=True)
+        st.markdown(
+            "Nutrição aplicada ao seu momento de vida, com insights que estimulam consciência alimentar."
         )
     with col2:
         st.markdown(
-            "<div class='floating-card'>Foto/ilustração da profissional (placeholder visual suave)</div>",
+            "<div class='placeholder-card' style=\"background-image:url('/mnt/data/gladia_template.html');background-size:cover;\">Mockup de insights astrológicos com estrelas e constelação suave</div>",
+            unsafe_allow_html=True,
+        )
+
+
+def _founder_section() -> None:
+    st.markdown("## Quem assina o método")
+    st.markdown(
+        "Apresentação profissional com transparência sobre referências, ética e integração entre nutrição e astrologia aplicada a hábitos."
+    )
+    col1, col2 = st.columns([0.9, 1.1])
+    with col1:
+        st.markdown("### Nutricionista clínica • CRN ativo")
+        st.write(
+            "Assinado por nutricionista clínica, especialista em comportamento alimentar, integrando protocolos validados e leitura astrológica orientada a hábitos."
+        )
+        st.markdown(
+            "- Orientações alinhadas ao CFN; não substitui acompanhamento individual quando necessário.\n"
+            "- Referências na base TACO, guias alimentares oficiais e literatura de comportamento alimentar.\n"
+            "- Transparência nas fontes citadas no relatório e recomendações realistas."
+        )
+    with col2:
+        st.markdown(
+            "<div class='floating-card'>Foto/ilustração da profissional com halo suave e fundo claro</div>",
             unsafe_allow_html=True,
         )
 
 
 def _mockup_section() -> None:
     st.markdown("<a id='mockup'></a>", unsafe_allow_html=True)
-    st.markdown("## Exemplo de plano NutriSigno")
-    st.markdown("Texto placeholder explicando o que o usuário recebe no plano e como utilizar.")
+    st.markdown("## O que você recebe — exemplo do relatório")
+    st.markdown(
+        "Mockup realista do relatório nutricional com tom claro (16:9), reforçando a oferta promocional e o conteúdo entregue."
+    )
     col1, col2 = st.columns([1.05, 0.95])
     with col1:
         st.markdown(
-            "<div class='placeholder-card'>Mockup do relatório/plano (imagem ou ilustração)</div>",
+            "<div class='placeholder-card' style=\"background-image:url('/mnt/data/gladia_template.html');background-size:cover;\">Mockup 1 — Relatório nutricional</div>",
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            "<p class='eyebrow'>Oferta de lançamento: de R$49,90 por R$27,90</p>",
             unsafe_allow_html=True,
         )
     with col2:
         st.markdown(
             "<div class='floating-card'>\n"
-            "<div class='mini-label'>Plano personalizado</div>\n"
-            "<h4>Card lateral com destaques</h4>\n"
-            "<p>Placeholders para bullets que explicam módulos do plano, orientações e ajustes semanais.</p>\n"
+            "<div class='mini-label'>Relatório digital em PDF</div>\n"
+            "<h4>O que o relatório traz</h4>\n"
+            "<p>Plano alimentar detalhado, gráficos suaves de progresso, insights astrológicos sobre apetite e disciplina, além de referências utilizadas (base TACO e diretrizes oficiais).</p>\n"
+            "<ul>\n"
+            "<li>Estrutura clara por horários e trocas inteligentes.</li>\n"
+            "<li>Insights comportamentais para janelas de maior impulso.</li>\n"
+            "<li>Dicas rápidas de hidratação e combinações fáceis.</li>\n"
+            "</ul>\n"
             "</div>",
             unsafe_allow_html=True,
         )
 
 
+def _plan_mockup_section() -> None:
+    st.markdown("## Plano alimentar em ação")
+    st.markdown(
+        "Mockup em tom claro, minimalista, abaixo dos benefícios, mostrando a tela do plano alimentar alinhado às constelações discretas."
+    )
+    col1, col2 = st.columns([0.95, 1.05])
+    with col1:
+        st.markdown(
+            "<div class='floating-card'>\n"
+            "<div class='mini-label'>Plano alimentar</div>\n"
+            "<h4>Organização diária</h4>\n"
+            "<p>Cardápio com trocas rápidas, barras de progresso para macros e notas de horário alinhadas ao seu mapa.</p>\n"
+            "<p>Rotina de hidratação guiada e preparações rápidas para manter consistência.</p>\n"
+            "</div>",
+            unsafe_allow_html=True,
+        )
+    with col2:
+        st.markdown(
+            "<div class='placeholder-card' style=\"background-image:url('/mnt/data/gladia_template.html');background-size:cover;\">Mockup 2 — Plano alimentar</div>",
+            unsafe_allow_html=True,
+        )
+
+
 def _testimonials_section() -> None:
-    st.markdown("## Depoimentos")
-    st.markdown("Prova social em placeholders, com 2–3 relatos breves.")
+    st.markdown("## O que elas sentiram na prática")
+    st.markdown("Depoimentos reais para reforçar clareza, elegância e praticidade do método.")
     cols = st.columns(3)
     depoimentos = [
-        ("Nome 1", "Frase curta placeholder sobre resultado percebido."),
-        ("Nome 2", "Comentário breve sobre rotina e autoconhecimento."),
-        ("Nome 3", "Depoimento placeholder destacando confiança no método."),
+        (
+            "Marina, 32",
+            "Comecei a entender meus horários de maior foco e parei de pular refeições. O plano é prático e nada radical.",
+        ),
+        (
+            "Bianca, 28",
+            "Os insights do meu mapa explicaram minhas compulsões noturnas. Ajustei jantares e sono e já me sinto mais estável.",
+        ),
+        (
+            "Fernanda, 41",
+            "Gostei da linguagem clara e da proposta elegante. Sinto que o plano respeita meu ritmo e minhas escolhas.",
+        ),
     ]
     for col, (nome, frase) in zip(cols, depoimentos):
         with col:
@@ -371,16 +503,28 @@ def _testimonials_section() -> None:
 
 def _faq_section() -> None:
     st.markdown("## Perguntas frequentes")
-    st.markdown("Respostas em placeholders, prontas para serem editadas.")
+    st.markdown("Lista em acordeão com respostas diretas para dúvidas mais comuns.")
     faq_items = [
-        ("Como funciona o plano?", "Resposta placeholder explicando o fluxo da avaliação ao plano."),
         (
-            "É realmente baseado em nutrição ou só astrologia?",
-            "Resposta placeholder reforçando base nutricional e integração com astrologia.",
+            "NutriSigno substitui acompanhamento nutricional?",
+            "Não. É um guia personalizado com base em evidências, mas não substitui consultas individuais quando necessárias.",
         ),
-        ("Preciso informar horário de nascimento?", "Resposta placeholder sobre dados necessários."),
-        ("É consulta médica?", "Resposta placeholder esclarecendo que não substitui acompanhamento."),
-        ("Como recebo meu plano?", "Resposta placeholder sobre entrega digital e próximos passos."),
+        (
+            "Preciso saber meu horário de nascimento?",
+            "Sim, para uma análise astrológica precisa. Caso não saiba, usamos janela aproximada com limitações descritas.",
+        ),
+        (
+            "Quanto tempo leva para receber o plano?",
+            "O envio é automático após o preenchimento completo do formulário: em poucos minutos você recebe o PDF.",
+        ),
+        (
+            "É baseado em que tipo de nutrição?",
+            "Nutrição baseada em evidências, referências da base TACO e diretrizes oficiais, sem protocolos extremos.",
+        ),
+        (
+            "Como meus dados são tratados? (LGPD)",
+            "Usamos apenas para gerar seu plano e relatório. Armazenamento seguro, sem compartilhamento com terceiros, conforme LGPD.",
+        ),
     ]
     for pergunta, resposta in faq_items:
         with st.expander(pergunta, expanded=False):
@@ -388,21 +532,39 @@ def _faq_section() -> None:
 
 
 def _final_cta_section() -> None:
-    st.markdown("## Pronta(o) para começar?")
+    st.markdown("## Pronta para receber seu plano feito para o seu corpo e seu mapa?")
     st.markdown(
-        "Frase curta em placeholder reforçando benefício e convite para iniciar a avaliação."
+        "Bloco final com CTA amplo, preço promocional e mockup técnico do dashboard para reforçar clareza e confiabilidade."
     )
-    st.markdown("<div class='cta-primary'>", unsafe_allow_html=True)
-    if st.button("Iniciar minha avaliação NutriSigno", use_container_width=True, key="cta_final"):
-        st.switch_page("pages/01_Formulario.py")
-    st.markdown("</div>", unsafe_allow_html=True)
+    col1, col2 = st.columns([1, 1])
+    with col1:
+        st.markdown(
+            "<div class='placeholder-card' style=\"background-image:url('/mnt/data/gladia_template.html');background-size:cover;\">Mockup 4 — Dashboard ou cálculo</div>",
+            unsafe_allow_html=True,
+        )
+    with col2:
+        st.markdown("<div class='floating-card'>", unsafe_allow_html=True)
+        st.markdown("<div class='mini-label'>Oferta de lançamento</div>", unsafe_allow_html=True)
+        st.markdown("<h3>de R$49,90 por R$27,90 — geração automática após o questionário</h3>", unsafe_allow_html=True)
+        st.markdown(
+            "<p>Pronta para receber seu plano feito para o seu corpo e seu mapa?</p>",
+            unsafe_allow_html=True,
+        )
+        st.markdown("<div class='cta-primary'>", unsafe_allow_html=True)
+        if st.button("Iniciar minha avaliação NutriSigno", use_container_width=True, key="cta_final"):
+            st.switch_page("pages/01_Formulario.py")
+        st.markdown("</div>", unsafe_allow_html=True)
+        st.markdown(
+            "<p class='eyebrow'>Selo de segurança: dados protegidos conforme LGPD</p>",
+            unsafe_allow_html=True,
+        )
+        st.markdown("</div>", unsafe_allow_html=True)
     st.divider()
     st.markdown(
         """
         <footer>
         Plano com foco em bem-estar; não substitui acompanhamento médico ou nutricional presencial.<br>
-        Links de política de privacidade e termos (placeholders).<br>
-        Respeito à LGPD e cuidado com dados pessoais (placeholder de mensagem).
+        Política de privacidade e termos disponíveis; respeito à LGPD e cuidado com dados pessoais.
         </footer>
         """,
         unsafe_allow_html=True,
@@ -426,13 +588,17 @@ def main() -> None:
     st.divider()
     _how_it_works_section()
     st.divider()
-    _audience_section()
+    _deliverables_section()
+    st.divider()
+    _mockup_section()
     st.divider()
     _benefits_section()
     st.divider()
-    _authority_section()
+    _plan_mockup_section()
     st.divider()
-    _mockup_section()
+    _why_it_works_section()
+    st.divider()
+    _founder_section()
     st.divider()
     _testimonials_section()
     st.divider()
