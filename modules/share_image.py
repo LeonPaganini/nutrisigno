@@ -115,12 +115,24 @@ ROOT_DIR = Path(__file__).resolve().parent
 LOGO_PATH = ROOT_DIR / "assets" / "nutrisigno_logo.PNG"
 
 COLOR_BACKGROUND_PRIMARY = "#2A1457"
+COLOR_PRIMARY_GREEN = "#8BE39B"
 COLOR_CARD_BOTTOM_BG = "#2F3142"
 COLOR_CARD_BOTTOM_BORDER = "#FFFFFF"
 COLOR_CARD_BOTTOM_TEXT = "#F5F5F5"
-RADAR_PADDING = 32
-RADAR_LABEL_OFFSET = 60
+COLOR_BULLET = COLOR_PRIMARY_GREEN
+BOTTOM_CARD_PADDING_X = 40
+BOTTOM_CARD_PADDING_Y = 32
+BOTTOM_CARD_LINE_SPACING = 14
+LOGO_PADDING = 14
+LOGO_MAX_SIZE = 140
+LOGO_MIN_SIZE = 100
+RADAR_PADDING_OUTER = 48
+RADAR_POLYGON_RADIUS = {"story": 220, "feed": 110}
+RADAR_TEXT_RADIUS_OFFSET = 70
+RADAR_CENTER_OFFSET_Y = 30
+RADAR_VERTICAL_SHIFT = 32
 TOP_CARD_PADDING = 32
+TOP_CARD_LABEL_OFFSET = 24
 
 TEXT_PALETTE = {
     "title": (200, 182, 255, 255),
@@ -137,6 +149,7 @@ TEXTOS_FIXOS = {
     "card_hidratacao": "Hidratação",
     "card_comportamentos": "Comportamentos em Destaque",
     "card_insight": "Insight NutriSigno",
+    "radar_center": "Energia",
     "card_rodape": "Gerado por NutriSigno",
     "footer": "nutrisigno.com • Resultado público",
 }
@@ -192,6 +205,12 @@ def _hex_to_rgba(hex_color: str, alpha: int = 255) -> Tuple[int, int, int, int]:
     return r, g, b, alpha
 
 
+def _primary_green(alpha: int = 230) -> Tuple[int, int, int, int]:
+    """Retorna o verde principal em RGBA com alpha configurável."""
+
+    return _hex_to_rgba(COLOR_PRIMARY_GREEN, alpha)
+
+
 def _apply_background(image: Image.Image, colors: Tuple[str, str, str, str]) -> None:
     width, height = image.size
     diagonal = Image.linear_gradient("L").resize((width, height))
@@ -233,16 +252,19 @@ def _draw_logo(image: Image.Image, draw: ImageDraw.ImageDraw, position: Tuple[in
         try:
             logo = Image.open(LOGO_PATH).convert("RGBA")
             x1, y1, x2, y2 = position
-            available_width = x2 - x1
-            available_height = y2 - y1
+            available_width = max(LOGO_MIN_SIZE, x2 - x1)
+            available_height = max(LOGO_MIN_SIZE, y2 - y1)
+
             # Mantém proporção original e aplica padding interno controlado.
-            padding = 12
-            max_width = max(1, available_width - 2 * padding)
-            max_height = max(1, available_height - 2 * padding)
+            inner_width = min(LOGO_MAX_SIZE, available_width - 2 * LOGO_PADDING)
+            inner_height = min(LOGO_MAX_SIZE, available_height - 2 * LOGO_PADDING)
+            max_width = max(1, inner_width)
+            max_height = max(1, inner_height)
             ratio = min(max_width / logo.width, max_height / logo.height)
             resized = logo.resize((int(logo.width * ratio), int(logo.height * ratio)), Image.LANCZOS)
             paste_x = x1 + (available_width - resized.width) // 2
             paste_y = y1 + (available_height - resized.height) // 2
+
             # Usa a máscara alfa do próprio logo para preservar transparências.
             image.paste(resized, (paste_x, paste_y), resized)
             return
@@ -359,13 +381,20 @@ def _draw_metric_card(
     title_font = _get_font(36)
     value_font = _get_font(64, "bold")
     x1, y1, x2, y2 = bbox
-    draw.text((x1 + TOP_CARD_PADDING, y1 + 24), title, font=title_font, fill=TEXT_PALETTE["title"])
+    title_bbox = title_font.getbbox(title)
+    draw.text(
+        (x1 + TOP_CARD_PADDING, y1 + TOP_CARD_LABEL_OFFSET),
+        title,
+        font=title_font,
+        fill=TEXT_PALETTE["title"],
+    )
 
     inner_area = value_area
     if inner_area is None:
+        # Área interna calculada para centralizar o valor considerando o rótulo.
         inner_area = (
             x1 + TOP_CARD_PADDING,
-            y1 + 80,
+            y1 + TOP_CARD_LABEL_OFFSET + (title_bbox[3] - title_bbox[1]) + 24,
             x2 - TOP_CARD_PADDING,
             y2 - TOP_CARD_PADDING,
         )
@@ -374,7 +403,7 @@ def _draw_metric_card(
     value_width = bbox_value[2] - bbox_value[0]
     value_height = bbox_value[3] - bbox_value[1]
     value_x, value_y = _centered_position(inner_area, (value_width, value_height))
-    draw.text((value_x, value_y), value, font=value_font, fill=accent)
+    draw.text((value_x, value_y), value, font=value_font, fill=_primary_green())
 
 
 def _draw_hydration_card(draw: ImageDraw.ImageDraw, bbox: Tuple[int, int, int, int],
@@ -411,14 +440,15 @@ def _draw_hydration_card(draw: ImageDraw.ImageDraw, bbox: Tuple[int, int, int, i
     draw.rounded_rectangle(
         (x1 + bar_margin, bar_y, x1 + bar_margin + fill_width, bar_y + bar_height),
         radius=12,
-        fill=accent,
+        fill=_primary_green(),
     )
 
 
 def _draw_radar(
     draw: ImageDraw.ImageDraw,
     center: Tuple[int, int],
-    radius: int,
+    radius_polygon: int,
+    radius_text: int,
     values: Sequence[float],
     labels: Sequence[str],
     accent: Tuple[int, int, int, int],
@@ -431,7 +461,7 @@ def _draw_radar(
         points = []
         for i in range(hex_axes):
             angle = math.pi / 2 + (2 * math.pi * i / hex_axes)
-            r = radius * (level / 4)
+            r = radius_polygon * (level / 4)
             x = cx + r * math.cos(angle)
             y = cy - r * math.sin(angle)
             points.append((x, y))
@@ -443,16 +473,16 @@ def _draw_radar(
 
     for i in range(hex_axes):
         angle = math.pi / 2 + (2 * math.pi * i / hex_axes)
-        x = cx + radius * math.cos(angle)
-        y = cy - radius * math.sin(angle)
+        x = cx + radius_polygon * math.cos(angle)
+        y = cy - radius_polygon * math.sin(angle)
         draw.line((cx, cy, x, y), fill=guide_color, width=1)
 
     axes = len(values)
     data_points = []
     for idx, value in enumerate(values):
         angle = math.pi / 2 + (2 * math.pi * idx / axes)
-        x = cx + radius * value * math.cos(angle)
-        y = cy - radius * value * math.sin(angle)
+        x = cx + radius_polygon * value * math.cos(angle)
+        y = cy - radius_polygon * value * math.sin(angle)
         data_points.append((x, y))
     fill_color = (accent[0], accent[1], accent[2], 80)
     draw.polygon(data_points, fill=fill_color, outline=accent)
@@ -460,13 +490,23 @@ def _draw_radar(
     label_font = _get_font(28)
     for idx, label in enumerate(labels):
         angle = math.pi / 2 + (2 * math.pi * idx / axes)
-        label_distance = radius + RADAR_LABEL_OFFSET
-        x = cx + label_distance * math.cos(angle)
-        y = cy - label_distance * math.sin(angle)
+        x = cx + radius_text * math.cos(angle)
+        y = cy - radius_text * math.sin(angle)
         bbox = label_font.getbbox(label)
         text_width = bbox[2] - bbox[0]
         text_height = bbox[3] - bbox[1]
         draw.text((x - text_width / 2, y - text_height / 2), label, font=label_font, fill=TEXT_PALETTE["body"])
+
+    center_text = TEXTOS_FIXOS["radar_center"]
+    center_font = _get_font(36, "bold")
+    center_bbox = center_font.getbbox(center_text)
+    center_width = center_bbox[2] - center_bbox[0]
+    center_height = center_bbox[3] - center_bbox[1]
+    center_position = (
+        cx - center_width / 2,
+        cy - center_height / 2 + RADAR_CENTER_OFFSET_Y,
+    )
+    draw.text(center_position, center_text, font=center_font, fill=_hex_to_rgba(COLOR_CARD_BOTTOM_TEXT, 210))
 
 
 def _normalize_values(data: ShareImagePayload) -> Tuple[Sequence[float], Sequence[str]]:
@@ -500,20 +540,20 @@ def _draw_list_card(draw: ImageDraw.ImageDraw, bbox: Tuple[int, int, int, int],
     title_font = _get_font(40, "bold")
     text_font = _get_font(32)
     title_color = _hex_to_rgba(COLOR_CARD_BOTTOM_TEXT, 250)
-    draw.text((x1 + 32, y1 + 32), title, font=title_font, fill=title_color)
-    offset = y1 + 110
+    draw.text((x1 + BOTTOM_CARD_PADDING_X, y1 + BOTTOM_CARD_PADDING_Y), title, font=title_font, fill=title_color)
+    offset = y1 + BOTTOM_CARD_PADDING_Y + 72
     bullet = "•"
     count = 0
-    bullet_color = (accent[0], accent[1], accent[2], 210)
+    bullet_color = _primary_green(220)
     text_color = _hex_to_rgba(COLOR_CARD_BOTTOM_TEXT, 230)
     for text in items:
         if max_items is not None and count >= max_items:
             break
-        wrapped = _wrap_text(text, text_font, x2 - x1 - 90)
+        wrapped = _wrap_text(text, text_font, x2 - x1 - 2 * BOTTOM_CARD_PADDING_X - 16)
         for line in wrapped:
-            draw.text((x1 + 48, offset), f"{bullet} ", font=text_font, fill=bullet_color)
-            draw.text((x1 + 96, offset), line, font=text_font, fill=text_color)
-            offset += 44
+            draw.text((x1 + BOTTOM_CARD_PADDING_X, offset), f"{bullet} ", font=text_font, fill=bullet_color)
+            draw.text((x1 + BOTTOM_CARD_PADDING_X + 36, offset), line, font=text_font, fill=text_color)
+            offset += text_font.getbbox(line)[3] - text_font.getbbox(line)[1] + BOTTOM_CARD_LINE_SPACING
         count += 1
 
 
@@ -524,15 +564,15 @@ def _draw_insight_card(draw: ImageDraw.ImageDraw, bbox: Tuple[int, int, int, int
     title_font = _get_font(40, "bold")
     text_font = _get_font(34)
     title_color = _hex_to_rgba(COLOR_CARD_BOTTOM_TEXT, 250)
-    draw.text((x1 + 32, y1 + 32), TEXTOS_FIXOS["card_insight"], font=title_font, fill=title_color)
-    insight_lines = _wrap_text(insight, text_font, x2 - x1 - 80)
-    offset = y1 + 120
+    draw.text((x1 + BOTTOM_CARD_PADDING_X, y1 + BOTTOM_CARD_PADDING_Y), TEXTOS_FIXOS["card_insight"], font=title_font, fill=title_color)
+    insight_lines = _wrap_text(insight, text_font, x2 - x1 - 2 * BOTTOM_CARD_PADDING_X)
+    offset = y1 + BOTTOM_CARD_PADDING_Y + 80
     text_color = _hex_to_rgba(COLOR_CARD_BOTTOM_TEXT, 230)
     for line in insight_lines:
-        draw.text((x1 + 32, offset), line, font=text_font, fill=text_color)
-        offset += 46
+        draw.text((x1 + BOTTOM_CARD_PADDING_X, offset), line, font=text_font, fill=text_color)
+        offset += text_font.getbbox(line)[3] - text_font.getbbox(line)[1] + BOTTOM_CARD_LINE_SPACING
     footer_font = _get_font(28)
-    draw.text((x1 + 32, y2 - 60), TEXTOS_FIXOS["card_rodape"], font=footer_font, fill=text_color)
+    draw.text((x1 + BOTTOM_CARD_PADDING_X, y2 - BOTTOM_CARD_PADDING_Y - 12), TEXTOS_FIXOS["card_rodape"], font=footer_font, fill=text_color)
 
 
 def _compose_story(
@@ -590,18 +630,18 @@ def _compose_story(
     _draw_hydration_card(draw, card_positions[2], data.hidratacao_score, accent, detail)
 
     normalized, labels = _normalize_values(data)
-    max_radius_horizontal = (
-        width // 2 - padding - RADAR_PADDING - RADAR_LABEL_OFFSET
-    )
-    radar_radius = min(220, max_radius_horizontal)
+    max_radius_horizontal = width // 2 - padding - RADAR_PADDING_OUTER - RADAR_TEXT_RADIUS_OFFSET
+    radar_radius = min(RADAR_POLYGON_RADIUS["story"], max_radius_horizontal)
+    radar_text_radius = radar_radius + RADAR_TEXT_RADIUS_OFFSET
+
     # Mantém o gráfico afastado dos cards superiores e das bordas laterais.
     radar_center = (
         width // 2,
-        card_top + card_height + gap + RADAR_PADDING + radar_radius,
+        card_top + card_height + RADAR_PADDING_OUTER + RADAR_VERTICAL_SHIFT + radar_radius,
     )
-    _draw_radar(draw, radar_center, radar_radius, normalized, labels, accent, detail)
+    _draw_radar(draw, radar_center, radar_radius, radar_text_radius, normalized, labels, accent, detail)
 
-    list_top = radar_center[1] + radar_radius + RADAR_PADDING
+    list_top = radar_center[1] + radar_text_radius + RADAR_PADDING_OUTER
     list_height = 260
     _draw_list_card(
         draw,
@@ -704,14 +744,15 @@ def _compose_feed(
     )
 
     normalized, labels = _normalize_values(data)
-    max_radius_horizontal = column_width // 2 - RADAR_PADDING - RADAR_LABEL_OFFSET
-    radar_radius = min(110, max_radius_horizontal)
-    radar_center_y = card_top + hydration_height + gap + RADAR_PADDING + radar_radius
+    max_radius_horizontal = column_width // 2 - RADAR_PADDING_OUTER - RADAR_TEXT_RADIUS_OFFSET
+    radar_radius = min(RADAR_POLYGON_RADIUS["feed"], max_radius_horizontal)
+    radar_text_radius = radar_radius + RADAR_TEXT_RADIUS_OFFSET
+    radar_center_y = card_top + hydration_height + gap + RADAR_PADDING_OUTER + RADAR_VERTICAL_SHIFT + radar_radius
     radar_center = (right_x + column_width // 2, radar_center_y)
-    _draw_radar(draw, radar_center, radar_radius, normalized, labels, accent, detail)
+    _draw_radar(draw, radar_center, radar_radius, radar_text_radius, normalized, labels, accent, detail)
 
     column_bottom = max(
-        second_card_top + card_height, radar_center[1] + radar_radius + RADAR_PADDING
+        second_card_top + card_height, radar_center[1] + radar_text_radius + RADAR_PADDING_OUTER
     )
     info_top = min(max(column_bottom + gap, identity_bbox[3] + 3 * gap), height - padding - 200)
     list_bbox = (padding, info_top, padding + column_width, height - padding)
