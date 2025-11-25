@@ -110,7 +110,7 @@ ACCENT_COLORS: Dict[ElementoSigno, Dict[str, str]] = {
     "Ar": {"accent": "#b19dff", "detail": "#d8ccff"},
 }
 
-LOGO_PATH = "assets/logo_nutrisigno.png"
+LOGO_PATH = "assets/nutrisigno_logo.PNG"
 
 COLOR_BACKGROUND_PRIMARY = "#2A1457"
 COLOR_CARD_BOTTOM_BG = "#2F3142"
