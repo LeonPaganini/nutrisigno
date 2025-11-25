@@ -110,6 +110,16 @@ ACCENT_COLORS: Dict[ElementoSigno, Dict[str, str]] = {
     "Ar": {"accent": "#b19dff", "detail": "#d8ccff"},
 }
 
+LOGO_PATH = "assets/logo_nutrisigno.png"
+
+COLOR_BACKGROUND_PRIMARY = "#2A1457"
+COLOR_CARD_BOTTOM_BG = "#2F3142"
+COLOR_CARD_BOTTOM_BORDER = "#B9B2E3"
+COLOR_CARD_BOTTOM_TEXT = "#F5F5F5"
+RADAR_PADDING = 32
+RADAR_LABEL_OFFSET = 60
+TOP_CARD_PADDING = 32
+
 TEXT_PALETTE = {
     "title": (200, 182, 255, 255),
     "body": (255, 255, 255, 255),
@@ -214,6 +224,32 @@ def _draw_placeholder_logo(draw: ImageDraw.ImageDraw, position: Tuple[int, int, 
     draw.text(((x1 + x2 - w) / 2, (y1 + y2 - h) / 2), text, font=font, fill=(255, 255, 255, 180))
 
 
+def _draw_logo(image: Image.Image, draw: ImageDraw.ImageDraw, position: Tuple[int, int, int, int]) -> None:
+    """Desenha o logo oficial, com fallback para o placeholder."""
+
+    if os.path.exists(LOGO_PATH):
+        try:
+            logo = Image.open(LOGO_PATH).convert("RGBA")
+            x1, y1, x2, y2 = position
+            available_width = x2 - x1
+            available_height = y2 - y1
+            # Mantém proporção e aplica padding interno
+            padding = 12
+            max_width = max(1, available_width - 2 * padding)
+            max_height = max(1, available_height - 2 * padding)
+            ratio = min(max_width / logo.width, max_height / logo.height)
+            resized = logo.resize((int(logo.width * ratio), int(logo.height * ratio)), Image.LANCZOS)
+            paste_x = x1 + (available_width - resized.width) // 2
+            paste_y = y1 + (available_height - resized.height) // 2
+            image.alpha_composite(resized, dest=(paste_x, paste_y))
+            return
+        except Exception:  # noqa: BLE001
+            # Em caso de falha, recorre ao placeholder
+            pass
+
+    _draw_placeholder_logo(draw, position)
+
+
 def _wrap_text(text: str, font: ImageFont.ImageFont, max_width: int) -> List[str]:
     if not text:
         return []
@@ -279,6 +315,16 @@ def _measure_spaced_text(font: ImageFont.ImageFont, text: str, spacing: int) -> 
     return width, height
 
 
+def _centered_position(area: Tuple[int, int, int, int], text_size: Tuple[int, int]) -> Tuple[float, float]:
+    """Retorna a posição para centralizar um texto dentro de uma área."""
+
+    x1, y1, x2, y2 = area
+    text_width, text_height = text_size
+    x = x1 + (x2 - x1 - text_width) / 2
+    y = y1 + (y2 - y1 - text_height) / 2
+    return x, y
+
+
 def _draw_glass_panel(
     draw: ImageDraw.ImageDraw,
     bbox: Tuple[int, int, int, int],
@@ -295,16 +341,37 @@ def _draw_glass_panel(
     draw.rounded_rectangle(bbox, radius=radius, fill=fill_color, outline=outline_color, width=3)
 
 
-def _draw_metric_card(draw: ImageDraw.ImageDraw, bbox: Tuple[int, int, int, int], title: str,
-                      value: str, accent: Tuple[int, int, int, int], detail: Tuple[int, int, int, int]) -> None:
+def _draw_metric_card(
+    draw: ImageDraw.ImageDraw,
+    bbox: Tuple[int, int, int, int],
+    title: str,
+    value: str,
+    accent: Tuple[int, int, int, int],
+    detail: Tuple[int, int, int, int],
+    value_area: Tuple[int, int, int, int] | None = None,
+) -> None:
+    """Desenha cards de métricas com valor centralizado."""
+
     _draw_glass_panel(draw, bbox, detail)
     title_font = _get_font(36)
     value_font = _get_font(64, "bold")
     x1, y1, x2, y2 = bbox
-    draw.text((x1 + 32, y1 + 28), title, font=title_font, fill=TEXT_PALETTE["title"])
-    bbox_value = value_font.getbbox(value)
+    draw.text((x1 + TOP_CARD_PADDING, y1 + 24), title, font=title_font, fill=TEXT_PALETTE["title"])
+
+    inner_area = value_area
+    if inner_area is None:
+        inner_area = (
+            x1 + TOP_CARD_PADDING,
+            y1 + 80,
+            x2 - TOP_CARD_PADDING,
+            y2 - TOP_CARD_PADDING,
+        )
+
+    bbox_value = draw.textbbox((0, 0), value, font=value_font)
+    value_width = bbox_value[2] - bbox_value[0]
     value_height = bbox_value[3] - bbox_value[1]
-    draw.text((x1 + 32, y2 - value_height - 40), value, font=value_font, fill=accent)
+    value_x, value_y = _centered_position(inner_area, (value_width, value_height))
+    draw.text((value_x, value_y), value, font=value_font, fill=accent)
 
 
 def _draw_hydration_card(draw: ImageDraw.ImageDraw, bbox: Tuple[int, int, int, int],
@@ -312,11 +379,25 @@ def _draw_hydration_card(draw: ImageDraw.ImageDraw, bbox: Tuple[int, int, int, i
                          detail: Tuple[int, int, int, int]) -> None:
     display_value = "—" if value is None else f"{value:.0f}"
     numeric = float(value or 0)
-    _draw_metric_card(draw, bbox, TEXTOS_FIXOS["card_hidratacao"], display_value, accent, detail)
     x1, y1, x2, y2 = bbox
     bar_height = 24
     bar_margin = 40
     bar_y = y2 - bar_height - 48
+    value_box = (
+        x1 + TOP_CARD_PADDING,
+        y1 + 84,
+        x2 - TOP_CARD_PADDING,
+        bar_y - 16,
+    )
+    _draw_metric_card(
+        draw,
+        bbox,
+        TEXTOS_FIXOS["card_hidratacao"],
+        display_value,
+        accent,
+        detail,
+        value_area=value_box,
+    )
     fill_width = (x2 - x1 - 2 * bar_margin) * max(0.0, min(numeric, 100.0)) / 100.0
     draw.rounded_rectangle(
         (x1 + bar_margin, bar_y, x2 - bar_margin, bar_y + bar_height),
@@ -376,8 +457,9 @@ def _draw_radar(
     label_font = _get_font(28)
     for idx, label in enumerate(labels):
         angle = math.pi / 2 + (2 * math.pi * idx / axes)
-        x = cx + (radius + 40) * math.cos(angle)
-        y = cy - (radius + 40) * math.sin(angle)
+        label_distance = radius + RADAR_LABEL_OFFSET
+        x = cx + label_distance * math.cos(angle)
+        y = cy - label_distance * math.sin(angle)
         bbox = label_font.getbbox(label)
         text_width = bbox[2] - bbox[0]
         text_height = bbox[3] - bbox[1]
@@ -393,11 +475,24 @@ def _normalize_values(data: ShareImagePayload) -> Tuple[Sequence[float], Sequenc
     return normalized, labels
 
 
+def _draw_bottom_panel(
+    draw: ImageDraw.ImageDraw, bbox: Tuple[int, int, int, int], radius: int = 36
+) -> None:
+    """Aplica o visual escuro dos cards inferiores."""
+
+    background = _hex_to_rgba(COLOR_CARD_BOTTOM_BG, 240)
+    border = _hex_to_rgba(COLOR_CARD_BOTTOM_BORDER, 160)
+    x1, y1, x2, y2 = bbox
+    shadow_bbox = (x1, y1 + 8, x2, y2 + 8)
+    shadow_color = (border[0], border[1], border[2], CARD_SHADOW_ALPHA)
+    draw.rounded_rectangle(shadow_bbox, radius=radius, fill=shadow_color)
+    draw.rounded_rectangle(bbox, radius=radius, fill=background, outline=border, width=3)
+
+
 def _draw_list_card(draw: ImageDraw.ImageDraw, bbox: Tuple[int, int, int, int],
                     title: str, items: Iterable[str], accent: Tuple[int, int, int, int],
                     detail: Tuple[int, int, int, int], max_items: int | None = None) -> None:
-    translucent_lilac = (140, 120, 255, 46)
-    _draw_glass_panel(draw, bbox, detail, radius=36, fill=translucent_lilac)
+    _draw_bottom_panel(draw, bbox, radius=36)
     x1, y1, x2, _ = bbox
     title_font = _get_font(40, "bold")
     text_font = _get_font(32)
@@ -406,32 +501,33 @@ def _draw_list_card(draw: ImageDraw.ImageDraw, bbox: Tuple[int, int, int, int],
     bullet = "•"
     count = 0
     bullet_color = (accent[0], accent[1], accent[2], 210)
+    text_color = _hex_to_rgba(COLOR_CARD_BOTTOM_TEXT, 230)
     for text in items:
         if max_items is not None and count >= max_items:
             break
         wrapped = _wrap_text(text, text_font, x2 - x1 - 90)
         for line in wrapped:
             draw.text((x1 + 48, offset), f"{bullet} ", font=text_font, fill=bullet_color)
-            draw.text((x1 + 96, offset), line, font=text_font, fill=(255, 255, 255, 230))
+            draw.text((x1 + 96, offset), line, font=text_font, fill=text_color)
             offset += 44
         count += 1
 
 
 def _draw_insight_card(draw: ImageDraw.ImageDraw, bbox: Tuple[int, int, int, int],
                        insight: str, accent: Tuple[int, int, int, int], detail: Tuple[int, int, int, int]) -> None:
-    translucent_lilac = (140, 120, 255, 46)
-    _draw_glass_panel(draw, bbox, detail, radius=36, fill=translucent_lilac)
+    _draw_bottom_panel(draw, bbox, radius=36)
     x1, y1, x2, y2 = bbox
     title_font = _get_font(40, "bold")
     text_font = _get_font(34)
     draw.text((x1 + 32, y1 + 32), TEXTOS_FIXOS["card_insight"], font=title_font, fill=TEXT_PALETTE["title"])
     insight_lines = _wrap_text(insight, text_font, x2 - x1 - 80)
     offset = y1 + 120
+    text_color = _hex_to_rgba(COLOR_CARD_BOTTOM_TEXT, 230)
     for line in insight_lines:
-        draw.text((x1 + 32, offset), line, font=text_font, fill=(255, 255, 255, 230))
+        draw.text((x1 + 32, offset), line, font=text_font, fill=text_color)
         offset += 46
     footer_font = _get_font(28)
-    draw.text((x1 + 32, y2 - 60), TEXTOS_FIXOS["card_rodape"], font=footer_font, fill=TEXT_PALETTE["muted"])
+    draw.text((x1 + 32, y2 - 60), TEXTOS_FIXOS["card_rodape"], font=footer_font, fill=text_color)
 
 
 def _compose_story(
@@ -444,7 +540,7 @@ def _compose_story(
     width, height = image.size
     padding = 80
 
-    _draw_placeholder_logo(draw, (padding, padding, padding + 160, padding + 140))
+    _draw_logo(image, draw, (padding, padding, padding + 160, padding + 140))
     header_font = _get_font(30)
     _draw_text_with_spacing(
         draw,
@@ -489,7 +585,8 @@ def _compose_story(
     _draw_hydration_card(draw, card_positions[2], data.hidratacao_score, accent, detail)
 
     normalized, labels = _normalize_values(data)
-    radar_radius = 220
+    max_radius_horizontal = (width - 2 * padding) // 2 - RADAR_PADDING - RADAR_LABEL_OFFSET
+    radar_radius = min(220, max_radius_horizontal)
     radar_center = (width // 2, card_top + card_height + radar_radius + gap)
     _draw_radar(draw, radar_center, radar_radius, normalized, labels, accent, detail)
 
@@ -538,7 +635,7 @@ def _compose_feed(
     width, height = image.size
     padding = 60
 
-    _draw_placeholder_logo(draw, (padding, padding, padding + 120, padding + 120))
+    _draw_logo(image, draw, (padding, padding, padding + 120, padding + 120))
     header_font = _get_font(26)
     _draw_text_with_spacing(
         draw,
@@ -596,7 +693,8 @@ def _compose_feed(
     )
 
     normalized, labels = _normalize_values(data)
-    radar_radius = 110
+    max_radius_horizontal = column_width // 2 - RADAR_PADDING - RADAR_LABEL_OFFSET
+    radar_radius = min(110, max_radius_horizontal)
     radar_center_y = card_top + hydration_height + gap + radar_radius
     radar_center = (right_x + column_width // 2, radar_center_y)
     _draw_radar(draw, radar_center, radar_radius, normalized, labels, accent, detail)
