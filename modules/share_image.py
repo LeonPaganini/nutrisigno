@@ -119,9 +119,9 @@ TEXT_PALETTE = {
 SECTION_GAP = 32
 
 TEXTOS_FIXOS = {
-    "header_subtitle": "NutriSigno • Mapa Nutricional",
+    "header_subtitle": "NutriSigno",
     "card_imc": "IMC",
-    "card_score": "Score NutriSigno",
+    "card_score": "Score",
     "card_hidratacao": "Hidratação",
     "card_comportamentos": "Comportamentos em Destaque",
     "card_insight": "Insight NutriSigno",
