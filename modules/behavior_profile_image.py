@@ -8,6 +8,7 @@ cards translúcidos, constelação dourada e símbolo em destaque.
 from __future__ import annotations
 
 import os
+import io
 from pathlib import Path
 from typing import Dict, Iterable, List, Sequence, Tuple
 
@@ -98,17 +99,30 @@ def _create_vertical_gradient(width: int, height: int, top_color: str, bottom_co
     return base.convert("RGBA")
 
 
-def _tint_and_resize_symbol(symbol_path: Path, max_height: int) -> Image.Image:
-    symbol = Image.open(symbol_path).convert("RGBA")
-    ratio = max_height / symbol.height
-    new_size = (int(symbol.width * ratio), max_height)
-    resized = symbol.resize(new_size, resample=Image.Resampling.LANCZOS)
-    luminance = resized.convert("L")
-    colored = ImageOps.colorize(luminance, black="#c8b7ff", white="#f6f0ff")
-    colored = colored.convert("RGBA")
-    alpha = Image.new("L", colored.size, int(255 * 0.3))
-    colored.putalpha(alpha)
-    return colored.filter(ImageFilter.GaussianBlur(radius=2))
+def _tint_and_resize_symbol(symbol_path: Path | None, max_height: int, fallback_char: str = "✦") -> Image.Image:
+    if symbol_path and symbol_path.exists():
+        symbol = Image.open(symbol_path).convert("RGBA")
+        ratio = max_height / symbol.height
+        new_size = (int(symbol.width * ratio), max_height)
+        resized = symbol.resize(new_size, resample=Image.Resampling.LANCZOS)
+        luminance = resized.convert("L")
+        colored = ImageOps.colorize(luminance, black="#c8b7ff", white="#f6f0ff")
+        colored = colored.convert("RGBA")
+        alpha = Image.new("L", colored.size, int(255 * 0.3))
+        colored.putalpha(alpha)
+        return colored.filter(ImageFilter.GaussianBlur(radius=2))
+
+    glyph = fallback_char or "✦"
+    size = max_height
+    canvas = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(canvas)
+    font = _get_font(int(size * 0.6), "bold")
+    bbox = draw.textbbox((0, 0), glyph, font=font)
+    text_w = bbox[2] - bbox[0]
+    text_h = bbox[3] - bbox[1]
+    pos = ((size - text_w) // 2, (size - text_h) // 2)
+    draw.text(pos, glyph, font=font, fill=(235, 223, 255, 180))
+    return canvas.filter(ImageFilter.GaussianBlur(radius=2))
 
 
 def _draw_constellation(draw: ImageDraw.ImageDraw, width: int, height: int) -> None:
@@ -127,10 +141,12 @@ def _draw_constellation(draw: ImageDraw.ImageDraw, width: int, height: int) -> N
         draw.ellipse((x - 5, y - 5, x + 5, y + 5), fill=COLOR_GOLD_PRIMARY + "99")
 
 
-def draw_big_symbol_and_constellation(base_img: Image.Image, symbol_path: Path) -> Image.Image:
+def draw_big_symbol_and_constellation(
+    base_img: Image.Image, symbol_path: Path | None, fallback_symbol: str = "✦"
+) -> Image.Image:
     canvas = base_img.copy()
     draw = ImageDraw.Draw(canvas, "RGBA")
-    symbol_img = _tint_and_resize_symbol(symbol_path, int(HEIGHT * 0.4))
+    symbol_img = _tint_and_resize_symbol(symbol_path, int(HEIGHT * 0.4), fallback_symbol)
     sym_x = (WIDTH - symbol_img.width) // 2
     sym_y = int(HEIGHT * 0.08)
     canvas.alpha_composite(symbol_img, (sym_x, sym_y))
@@ -259,20 +275,22 @@ def draw_footer(draw: ImageDraw.ImageDraw) -> None:
     draw.text((x, y), footer_text, font=font, fill=COLOR_TEXT_SECONDARY)
 
 
-def gerar_card_comportamental(
+def _build_behavior_image(
     nome: str,
     idade: int,
     signo: str,
     elemento: str,
     regente: str,
     dados_comportamento: Dict[str, Sequence[str]],
-    caminho_simbolo_signo: str,
-    output_path: str,
-) -> None:
-    """Gera a imagem de perfil comportamental em PNG."""
+    caminho_simbolo_signo: str | None,
+    fallback_symbol: str = "✦",
+) -> Image.Image:
+    """Monta a composição da imagem comportamental em memória."""
 
     background = _create_vertical_gradient(WIDTH, HEIGHT, BACKGROUND_GRADIENT_TOP, BACKGROUND_GRADIENT_BOTTOM)
-    background = draw_big_symbol_and_constellation(background, Path(caminho_simbolo_signo))
+    background = draw_big_symbol_and_constellation(
+        background, Path(caminho_simbolo_signo) if caminho_simbolo_signo else None, fallback_symbol
+    )
     canvas = background.copy()
 
     fontes = {
@@ -341,9 +359,65 @@ def gerar_card_comportamental(
 
     draw_footer(draw)
 
+    return canvas
+
+
+def gerar_card_comportamental(
+    nome: str,
+    idade: int,
+    signo: str,
+    elemento: str,
+    regente: str,
+    dados_comportamento: Dict[str, Sequence[str]],
+    caminho_simbolo_signo: str,
+    output_path: str,
+    fallback_symbol: str = "✦",
+) -> None:
+    """Gera a imagem de perfil comportamental em PNG e salva em disco."""
+
+    canvas = _build_behavior_image(
+        nome=nome,
+        idade=idade,
+        signo=signo,
+        elemento=elemento,
+        regente=regente,
+        dados_comportamento=dados_comportamento,
+        caminho_simbolo_signo=caminho_simbolo_signo,
+        fallback_symbol=fallback_symbol,
+    )
+
     output = Path(output_path)
     output.parent.mkdir(parents=True, exist_ok=True)
     canvas.save(output, format="PNG")
+
+
+def gerar_card_comportamental_bytes(
+    nome: str,
+    idade: int,
+    signo: str,
+    elemento: str,
+    regente: str,
+    dados_comportamento: Dict[str, Sequence[str]],
+    caminho_simbolo_signo: str | None = None,
+    fallback_symbol: str = "✦",
+) -> bytes:
+    """Gera a imagem de perfil comportamental e retorna como bytes PNG."""
+
+    canvas = _build_behavior_image(
+        nome=nome,
+        idade=idade,
+        signo=signo,
+        elemento=elemento,
+        regente=regente,
+        dados_comportamento=dados_comportamento,
+        caminho_simbolo_signo=caminho_simbolo_signo,
+        fallback_symbol=fallback_symbol,
+    )
+
+    buffer = io.BytesIO()
+    canvas.save(buffer, format="PNG")
+    buffer.seek(0)
+    return buffer.getvalue()
 
 
 if __name__ == "__main__":
@@ -381,4 +455,5 @@ if __name__ == "__main__":
         dados_comportamento=exemplo_dados,
         caminho_simbolo_signo=str(simbolo_exemplo),
         output_path=str(Path(__file__).resolve().parent / "outputs" / "perfil_comportamental.png"),
+        fallback_symbol="♒",
     )

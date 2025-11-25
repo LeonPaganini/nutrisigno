@@ -8,7 +8,7 @@ import re
 import unicodedata
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Iterable, Optional, Tuple
+from typing import Any, Dict, Iterable, Optional, Sequence, Tuple
 
 import streamlit as st
 
@@ -24,6 +24,7 @@ from modules.form.ui_insights import (
     signo_symbol,
 )
 from modules.share_image import gerar_imagem_share
+from modules.behavior_profile_image import gerar_card_comportamental_bytes
 from modules.results_context import PILLAR_NAMES, ensure_pilares_scores
 
 log = logging.getLogger(__name__)
@@ -762,6 +763,52 @@ def _build_share_payload(
     }
 
 
+def _unique_lines(items: Iterable[Any]) -> List[str]:
+    seen: set[str] = set()
+    out: List[str] = []
+    for item in items:
+        text = str(item or "").strip()
+        if not text or text in seen:
+            continue
+        out.append(text)
+        seen.add(text)
+    return out
+
+
+def _build_behavior_profile_content(
+    respostas: Dict[str, Any],
+    share_payload: Dict[str, Any],
+    hydration: Dict[str, Any],
+    sleep: Dict[str, Any],
+    stress: Dict[str, Any],
+    activity: Dict[str, Any],
+    goal: str,
+) -> Dict[str, Sequence[str]]:
+    comportamentos = [item.strip() for item in share_payload.get("comportamentos", []) if str(item).strip()]
+
+    energia = _unique_lines([activity.get("message"), sleep.get("message"), hydration.get("message")])
+    emocional = _unique_lines([stress.get("message"), share_payload.get("insight_frase")])
+
+    motivacao_raw = respostas.get("motivacao")
+    decisao = _unique_lines(
+        [
+            f"Motivação declarada: {int(_to_float(motivacao_raw, motivacao_raw))}/5" if motivacao_raw else "",
+            goal,
+        ]
+    )
+
+    rotina = comportamentos[:3]
+    destaques = comportamentos[3:] or rotina[:2] or emocional[:2] or energia[:2]
+
+    return {
+        "energia": energia or rotina[:2],
+        "emocional": emocional or destaques[:2],
+        "decisao": decisao or emocional[:2],
+        "rotina": rotina or destaques,
+        "destaques": destaques or comportamentos or energia[:2] or emocional[:2],
+    }
+
+
 def _build_recommendations(
     hydration: Dict[str, Any],
     sleep: Dict[str, Any],
@@ -1190,12 +1237,13 @@ def _render_actions(
     payload: Dict[str, Any],
     pdf_bytes: bytes,
     share_bytes: bytes,
+    behavior_bytes: bytes | None = None,
 ) -> None:
     # Espaço vertical antes do bloco de ações
     st.markdown("<div style='margin-top: 24px;'></div>", unsafe_allow_html=True)
 
     if state == "S1":
-        cols = st.columns(3, gap="medium")
+        cols = st.columns(4 if behavior_bytes else 3, gap="medium")
         payment_url = payload.get("payment_url") or payload.get("checkout_url")
 
         with cols[0]:
@@ -1223,12 +1271,22 @@ def _render_actions(
                 use_container_width=True,
             )
 
+        if behavior_bytes:
+            with cols[3]:
+                st.download_button(
+                    "Perfil comportamental",
+                    data=behavior_bytes,
+                    file_name=f"nutrisigno_{pac_id[:8]}_comportamental.png",
+                    mime="image/png",
+                    use_container_width=True,
+                )
+
         # Espaço depois do bloco (não colar no texto/alerta seguinte)
         st.markdown("<div style='margin-bottom: 24px;'></div>", unsafe_allow_html=True)
         return
 
     # Estado com plano IA disponível
-    cols = st.columns(4, gap="medium")
+    cols = st.columns(5 if behavior_bytes else 4, gap="medium")
 
     with cols[0]:
         if st.button("Plano IA", type="primary"):
@@ -1259,6 +1317,16 @@ def _render_actions(
             mime="image/png",
             use_container_width=True,
         )
+
+    if behavior_bytes:
+        with cols[4]:
+            st.download_button(
+                "Perfil comportamental",
+                data=behavior_bytes,
+                file_name=f"nutrisigno_{pac_id[:8]}_comportamental.png",
+                mime="image/png",
+                use_container_width=True,
+            )
 
     # Espaço depois do bloco de ações (versão paga)
     st.markdown("<div style='margin-bottom: 24px;'></div>", unsafe_allow_html=True)
@@ -1530,7 +1598,36 @@ def main() -> None:
     pdf_bytes = build_insights_pdf_bytes(insights)
     share_payload = _build_share_payload(respostas, insights, pilares_scores, bmi, score)
     share_bytes = gerar_imagem_share(share_payload, formato="story")
-    _render_actions(state_info["state"], pac_id, insights, payload, pdf_bytes, share_bytes)
+    behavior_bytes: bytes | None = None
+    try:
+        behavior_content = _build_behavior_profile_content(
+            respostas,
+            share_payload,
+            hydration,
+            sleep,
+            stress,
+            activity,
+            goal,
+        )
+        behavior_regente = str(
+            respostas.get("regente")
+            or respostas.get("planeta_regente")
+            or respostas.get("regente_signo")
+            or "—"
+        )
+        behavior_bytes = gerar_card_comportamental_bytes(
+            nome=share_payload["primeiro_nome"],
+            idade=share_payload["idade"],
+            signo=share_payload["signo"],
+            elemento=share_payload["elemento"],
+            regente=behavior_regente,
+            dados_comportamento=behavior_content,
+            caminho_simbolo_signo=None,
+            fallback_symbol=signo_symbol(share_payload["signo"]),
+        )
+    except Exception:  # pragma: no cover - geração gráfica opcional
+        log.exception("Falha ao gerar imagem comportamental.")
+    _render_actions(state_info["state"], pac_id, insights, payload, pdf_bytes, share_bytes, behavior_bytes)
 
     if state_info["state"] != "S1" and ai_summary:
         with st.expander("Resumo IA (educativo)"):
