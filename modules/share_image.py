@@ -15,6 +15,7 @@ from __future__ import annotations
 import io
 import math
 import os
+from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Literal, Mapping, Optional, Sequence, Tuple
 
@@ -110,11 +111,12 @@ ACCENT_COLORS: Dict[ElementoSigno, Dict[str, str]] = {
     "Ar": {"accent": "#b19dff", "detail": "#d8ccff"},
 }
 
-LOGO_PATH = "assets/nutrisigno_logo.PNG"
+ROOT_DIR = Path(__file__).resolve().parent
+LOGO_PATH = ROOT_DIR / "assets" / "nutrisigno_logo.PNG"
 
 COLOR_BACKGROUND_PRIMARY = "#2A1457"
 COLOR_CARD_BOTTOM_BG = "#2F3142"
-COLOR_CARD_BOTTOM_BORDER = "#B9B2E3"
+COLOR_CARD_BOTTOM_BORDER = "#FFFFFF"
 COLOR_CARD_BOTTOM_TEXT = "#F5F5F5"
 RADAR_PADDING = 32
 RADAR_LABEL_OFFSET = 60
@@ -227,13 +229,13 @@ def _draw_placeholder_logo(draw: ImageDraw.ImageDraw, position: Tuple[int, int, 
 def _draw_logo(image: Image.Image, draw: ImageDraw.ImageDraw, position: Tuple[int, int, int, int]) -> None:
     """Desenha o logo oficial, com fallback para o placeholder."""
 
-    if os.path.exists(LOGO_PATH):
+    if LOGO_PATH.exists():
         try:
             logo = Image.open(LOGO_PATH).convert("RGBA")
             x1, y1, x2, y2 = position
             available_width = x2 - x1
             available_height = y2 - y1
-            # Mantém proporção e aplica padding interno
+            # Mantém proporção original e aplica padding interno controlado.
             padding = 12
             max_width = max(1, available_width - 2 * padding)
             max_height = max(1, available_height - 2 * padding)
@@ -241,7 +243,8 @@ def _draw_logo(image: Image.Image, draw: ImageDraw.ImageDraw, position: Tuple[in
             resized = logo.resize((int(logo.width * ratio), int(logo.height * ratio)), Image.LANCZOS)
             paste_x = x1 + (available_width - resized.width) // 2
             paste_y = y1 + (available_height - resized.height) // 2
-            image.alpha_composite(resized, dest=(paste_x, paste_y))
+            # Usa a máscara alfa do próprio logo para preservar transparências.
+            image.paste(resized, (paste_x, paste_y), resized)
             return
         except Exception:  # noqa: BLE001
             # Em caso de falha, recorre ao placeholder
@@ -475,7 +478,7 @@ def _normalize_values(data: ShareImagePayload) -> Tuple[Sequence[float], Sequenc
     return normalized, labels
 
 
-def _draw_bottom_panel(
+def _draw_bottom_card(
     draw: ImageDraw.ImageDraw, bbox: Tuple[int, int, int, int], radius: int = 36
 ) -> None:
     """Aplica o visual escuro dos cards inferiores."""
@@ -492,11 +495,12 @@ def _draw_bottom_panel(
 def _draw_list_card(draw: ImageDraw.ImageDraw, bbox: Tuple[int, int, int, int],
                     title: str, items: Iterable[str], accent: Tuple[int, int, int, int],
                     detail: Tuple[int, int, int, int], max_items: int | None = None) -> None:
-    _draw_bottom_panel(draw, bbox, radius=36)
+    _draw_bottom_card(draw, bbox, radius=36)
     x1, y1, x2, _ = bbox
     title_font = _get_font(40, "bold")
     text_font = _get_font(32)
-    draw.text((x1 + 32, y1 + 32), title, font=title_font, fill=TEXT_PALETTE["title"])
+    title_color = _hex_to_rgba(COLOR_CARD_BOTTOM_TEXT, 250)
+    draw.text((x1 + 32, y1 + 32), title, font=title_font, fill=title_color)
     offset = y1 + 110
     bullet = "•"
     count = 0
@@ -515,11 +519,12 @@ def _draw_list_card(draw: ImageDraw.ImageDraw, bbox: Tuple[int, int, int, int],
 
 def _draw_insight_card(draw: ImageDraw.ImageDraw, bbox: Tuple[int, int, int, int],
                        insight: str, accent: Tuple[int, int, int, int], detail: Tuple[int, int, int, int]) -> None:
-    _draw_bottom_panel(draw, bbox, radius=36)
+    _draw_bottom_card(draw, bbox, radius=36)
     x1, y1, x2, y2 = bbox
     title_font = _get_font(40, "bold")
     text_font = _get_font(34)
-    draw.text((x1 + 32, y1 + 32), TEXTOS_FIXOS["card_insight"], font=title_font, fill=TEXT_PALETTE["title"])
+    title_color = _hex_to_rgba(COLOR_CARD_BOTTOM_TEXT, 250)
+    draw.text((x1 + 32, y1 + 32), TEXTOS_FIXOS["card_insight"], font=title_font, fill=title_color)
     insight_lines = _wrap_text(insight, text_font, x2 - x1 - 80)
     offset = y1 + 120
     text_color = _hex_to_rgba(COLOR_CARD_BOTTOM_TEXT, 230)
@@ -585,12 +590,18 @@ def _compose_story(
     _draw_hydration_card(draw, card_positions[2], data.hidratacao_score, accent, detail)
 
     normalized, labels = _normalize_values(data)
-    max_radius_horizontal = (width - 2 * padding) // 2 - RADAR_PADDING - RADAR_LABEL_OFFSET
+    max_radius_horizontal = (
+        width // 2 - padding - RADAR_PADDING - RADAR_LABEL_OFFSET
+    )
     radar_radius = min(220, max_radius_horizontal)
-    radar_center = (width // 2, card_top + card_height + radar_radius + gap)
+    # Mantém o gráfico afastado dos cards superiores e das bordas laterais.
+    radar_center = (
+        width // 2,
+        card_top + card_height + gap + RADAR_PADDING + radar_radius,
+    )
     _draw_radar(draw, radar_center, radar_radius, normalized, labels, accent, detail)
 
-    list_top = radar_center[1] + radar_radius + gap
+    list_top = radar_center[1] + radar_radius + RADAR_PADDING
     list_height = 260
     _draw_list_card(
         draw,
@@ -695,11 +706,13 @@ def _compose_feed(
     normalized, labels = _normalize_values(data)
     max_radius_horizontal = column_width // 2 - RADAR_PADDING - RADAR_LABEL_OFFSET
     radar_radius = min(110, max_radius_horizontal)
-    radar_center_y = card_top + hydration_height + gap + radar_radius
+    radar_center_y = card_top + hydration_height + gap + RADAR_PADDING + radar_radius
     radar_center = (right_x + column_width // 2, radar_center_y)
     _draw_radar(draw, radar_center, radar_radius, normalized, labels, accent, detail)
 
-    column_bottom = max(second_card_top + card_height, radar_center[1] + radar_radius)
+    column_bottom = max(
+        second_card_top + card_height, radar_center[1] + radar_radius + RADAR_PADDING
+    )
     info_top = min(max(column_bottom + gap, identity_bbox[3] + 3 * gap), height - padding - 200)
     list_bbox = (padding, info_top, padding + column_width, height - padding)
     insight_bbox = (right_x, info_top, width - padding, height - padding)
