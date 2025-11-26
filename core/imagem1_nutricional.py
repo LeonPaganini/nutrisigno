@@ -1,14 +1,15 @@
-"""Geração da Imagem 1 – Card Nutricional."""
+"""Geração da Imagem 1 – Card Nutricional com glassmorphism moderno."""
 
 from __future__ import annotations
 
 import io
 import logging
+import math
 import os
 from pathlib import Path
-from typing import Dict, Iterable, List, Sequence, Tuple
+from typing import Dict, List, Sequence, Tuple
 
-from PIL import Image, ImageColor, ImageDraw, ImageFont
+from PIL import Image, ImageColor, ImageDraw, ImageFilter, ImageFont
 
 from modules.results_context import PILLAR_NAMES
 
@@ -16,27 +17,23 @@ logger = logging.getLogger(__name__)
 
 WIDTH = 1080
 HEIGHT = 1920
+MARGIN_OUTER = 96
+GAP = 48
+CARD_RADIUS = 32
+CARD_PADDING = 40
 
 ROOT_DIR = Path(__file__).resolve().parent.parent
 ASSETS_DIR = ROOT_DIR / "assets"
 LOGO_PATH = ASSETS_DIR / "nutrisigno_logo.PNG"
 
-COLOR_BACKGROUND_TOP = "#2A1457"
-COLOR_BACKGROUND_BOTTOM = "#512C8A"
-COLOR_PRIMARY_GREEN = "#8BE39B"
-COLOR_CARD_DARK = "#2F3142"
-COLOR_CARD_BORDER = "#42465A"
-COLOR_TEXT_PRIMARY = (255, 255, 255, 255)
-COLOR_TEXT_MUTED = (230, 224, 248, 220)
-COLOR_PANEL = (255, 255, 255, 30)
-COLOR_PANEL_BORDER = (255, 255, 255, 60)
-
-PADDING = 48
-TOP_CARD_HEIGHT = 150
-BOTTOM_CARD_HEIGHT = 320
-BOTTOM_CARD_GAP = 24
-RADAR_PADDING = 64
-RADAR_TEXT_PADDING = 28
+COLOR_GRADIENT_TOP = "#9F88C9"
+COLOR_GRADIENT_BOTTOM = "#5C488F"
+COLOR_PRIMARY_GREEN = "#7CD8A1"
+COLOR_GOLD = "#E7D084"
+COLOR_CARD_DARK = "#252736"
+COLOR_TEXT_LIGHT = (255, 255, 255, 240)
+COLOR_TEXT_SUBTLE = (232, 228, 247, 210)
+COLOR_TEXT_PURPLE = (159, 136, 201, 255)
 
 _FONT_CACHE: Dict[Tuple[int, str], ImageFont.FreeTypeFont] = {}
 
@@ -70,10 +67,10 @@ def _get_font(size: int, weight: str = "regular") -> ImageFont.ImageFont:
     return font
 
 
-def _create_vertical_gradient(width: int, height: int, top: str, bottom: str) -> Image.Image:
+def _create_vertical_gradient(width: int, height: int) -> Image.Image:
     base = Image.new("RGB", (width, height), "white")
-    top_r, top_g, top_b = ImageColor.getrgb(top)
-    bottom_r, bottom_g, bottom_b = ImageColor.getrgb(bottom)
+    top_r, top_g, top_b = ImageColor.getrgb(COLOR_GRADIENT_TOP)
+    bottom_r, bottom_g, bottom_b = ImageColor.getrgb(COLOR_GRADIENT_BOTTOM)
     gradient = Image.new("RGBA", (1, height))
     for y in range(height):
         ratio = y / max(height - 1, 1)
@@ -81,7 +78,7 @@ def _create_vertical_gradient(width: int, height: int, top: str, bottom: str) ->
         g = int(top_g + (bottom_g - top_g) * ratio)
         b = int(top_b + (bottom_b - top_b) * ratio)
         gradient.putpixel((0, y), (r, g, b, 170))
-    gradient = gradient.resize((width, height))
+    gradient = gradient.resize((width, height), resample=Image.Resampling.LANCZOS)
     base_rgba = base.convert("RGBA")
     base_rgba.paste(gradient, (0, 0), gradient)
     return base_rgba
@@ -94,157 +91,292 @@ def _load_logo(max_width: int) -> Image.Image | None:
             ratio = max_width / logo.width
             new_size = (int(logo.width * ratio), int(logo.height * ratio))
             return logo.resize(new_size, resample=Image.Resampling.LANCZOS)
-    except Exception:  # pragma: no cover - defensive
+    except Exception:  # pragma: no cover - defesa
         logger.exception("Falha ao carregar o logo do NutriSigno.")
     return None
 
 
-def _draw_text_centered(draw: ImageDraw.ImageDraw, box: Tuple[int, int, int, int], text: str, font: ImageFont.ImageFont, fill: Tuple[int, int, int, int]) -> None:
-    bbox = draw.textbbox((0, 0), text, font=font)
-    text_w = bbox[2] - bbox[0]
-    text_h = bbox[3] - bbox[1]
+def draw_text_left(
+    draw: ImageDraw.ImageDraw,
+    position: Tuple[int, int],
+    text: str,
+    font: ImageFont.ImageFont,
+    fill: Tuple[int, int, int, int],
+    spacing: int = 6,
+) -> int:
+    x, y = position
+    for line in text.split("\n"):
+        draw.text((x, y), line, font=font, fill=fill)
+        bbox = draw.textbbox((0, 0), line, font=font)
+        y += (bbox[3] - bbox[1]) + spacing
+    return y
+
+
+def draw_text_center(
+    draw: ImageDraw.ImageDraw,
+    box: Tuple[int, int, int, int],
+    text: str,
+    font: ImageFont.ImageFont,
+    fill: Tuple[int, int, int, int],
+    spacing: int = 6,
+) -> None:
     x0, y0, x1, y1 = box
-    pos = (x0 + (x1 - x0 - text_w) // 2, y0 + (y1 - y0 - text_h) // 2)
-    draw.text(pos, text, font=font, fill=fill)
+    lines = text.split("\n")
+    total_height = 0
+    heights: List[int] = []
+    widths: List[int] = []
+    for line in lines:
+        bbox = draw.textbbox((0, 0), line, font=font)
+        heights.append(bbox[3] - bbox[1])
+        widths.append(bbox[2] - bbox[0])
+    for idx, h in enumerate(heights):
+        total_height += h
+        if idx < len(lines) - 1:
+            total_height += spacing
+    cursor_y = y0 + (y1 - y0 - total_height) // 2
+    for line, w, h in zip(lines, widths, heights):
+        cursor_x = x0 + (x1 - x0 - w) // 2
+        draw.text((cursor_x, cursor_y), line, font=font, fill=fill)
+        cursor_y += h + spacing
 
 
-def _draw_top_cards(draw: ImageDraw.ImageDraw, start_y: int, width: int, payload: dict) -> int:
-    section_width = width - (2 * PADDING)
-    card_width = (section_width - (2 * BOTTOM_CARD_GAP)) // 3
+def draw_glass_card(
+    base_img: Image.Image,
+    box: Tuple[int, int, int, int],
+    radius: int = CARD_RADIUS,
+    blur_radius: int = 22,
+    fill_alpha: int = 85,
+    border_alpha: int = 110,
+) -> None:
+    x0, y0, x1, y1 = map(int, box)
+    width, height = x1 - x0, y1 - y0
+
+    cropped = base_img.crop((x0, y0, x1, y1))
+    blurred = cropped.filter(ImageFilter.GaussianBlur(radius=blur_radius))
+
+    shadow = Image.new("RGBA", (width + 12, height + 12), (0, 0, 0, 0))
+    shadow_draw = ImageDraw.Draw(shadow)
+    shadow_draw.rounded_rectangle(
+        (6, 6, width + 6, height + 6), radius=radius + 6, fill=(0, 0, 0, 60)
+    )
+    shadow = shadow.filter(ImageFilter.GaussianBlur(radius=12))
+    base_img.alpha_composite(shadow, dest=(x0 - 6, y0 - 2))
+
+    glass = Image.new("RGBA", (width, height), (255, 255, 255, 0))
+    glass_draw = ImageDraw.Draw(glass)
+    glass_draw.rounded_rectangle(
+        (0, 0, width, height),
+        radius=radius,
+        fill=(255, 255, 255, fill_alpha),
+        outline=(255, 255, 255, border_alpha),
+        width=2,
+    )
+
+    blurred.paste(glass, (0, 0), glass)
+    base_img.paste(blurred, (x0, y0))
+
+
+def draw_header_nutricional(canvas: Image.Image, payload: dict) -> int:
+    box = (MARGIN_OUTER, MARGIN_OUTER, WIDTH - MARGIN_OUTER, MARGIN_OUTER + 260)
+    draw_glass_card(canvas, box, radius=36, blur_radius=24, fill_alpha=90)
+    draw = ImageDraw.Draw(canvas)
+
+    logo = _load_logo(210)
+    text_x = box[0] + CARD_PADDING
+    if logo:
+        logo_y = box[1] + (260 - logo.height) // 2
+        canvas.paste(logo, (box[0] + CARD_PADDING, logo_y), logo)
+        text_x = box[0] + CARD_PADDING + logo.width + 28
+
+    title_font = _get_font(46, "bold")
+    subtitle_font = _get_font(28)
+
+    nome = str(payload.get("nome") or "Paciente").strip() or "Paciente"
+    idade = int(payload.get("idade") or 0)
+    signo = str(payload.get("signo") or "Signo")
+
+    draw.text((text_x, box[1] + 66), nome, font=title_font, fill=COLOR_TEXT_LIGHT)
+    draw.text((text_x, box[1] + 126), f"{idade} anos", font=subtitle_font, fill=COLOR_TEXT_SUBTLE)
+    draw.text((text_x, box[1] + 168), signo, font=subtitle_font, fill=COLOR_TEXT_SUBTLE)
+
+    return box[3] + GAP
+
+
+def draw_metrics(canvas: Image.Image, start_y: int, payload: dict) -> int:
+    draw = ImageDraw.Draw(canvas)
+    section_width = WIDTH - 2 * MARGIN_OUTER
+    card_width = int((section_width - 2 * GAP) / 3)
+    card_height = 152
+
     labels = ["IMC", "Score", "Hidratação"]
     values = [payload.get("imc", 0), payload.get("score", 0), payload.get("hidratacao", 0)]
-    colors = [COLOR_PRIMARY_GREEN, "#F3DFA2", COLOR_PRIMARY_GREEN]
+    colors = ["#3CBF73", COLOR_GOLD, "#3CBF73"]
+
     title_font = _get_font(28, "bold")
-    value_font = _get_font(44, "bold")
+    value_font = _get_font(42, "bold")
 
-    y = start_y
-    for idx, label in enumerate(labels):
-        x = PADDING + idx * (card_width + BOTTOM_CARD_GAP)
-        rect = (x, y, x + card_width, y + TOP_CARD_HEIGHT)
-        draw.rounded_rectangle(rect, radius=26, fill=COLOR_PANEL, outline=COLOR_PANEL_BORDER, width=2)
-        _draw_text_centered(
-            draw,
-            (rect[0], rect[1] + 16, rect[2], rect[1] + 16 + 36),
-            label,
-            title_font,
-            COLOR_TEXT_MUTED,
+    for idx, (label, value, color) in enumerate(zip(labels, values, colors)):
+        x0 = MARGIN_OUTER + idx * (card_width + GAP)
+        y0 = start_y
+        x1 = x0 + card_width
+        y1 = y0 + card_height
+
+        shadow = Image.new("RGBA", (card_width + 20, card_height + 20), (0, 0, 0, 0))
+        shadow_draw = ImageDraw.Draw(shadow)
+        shadow_draw.rounded_rectangle(
+            (10, 10, card_width + 10, card_height + 10),
+            radius=CARD_RADIUS + 6,
+            fill=(0, 0, 0, 50),
         )
-        _draw_text_centered(draw, (rect[0], rect[1] + 60, rect[2], rect[3]), f"{values[idx]}", value_font, ImageColor.getrgb(colors[idx]) + (255,))
-    return y + TOP_CARD_HEIGHT + 32
+        shadow = shadow.filter(ImageFilter.GaussianBlur(radius=12))
+        canvas.alpha_composite(shadow, dest=(x0 - 10, y0 - 6))
+
+        draw.rounded_rectangle(
+            (x0, y0, x1, y1),
+            radius=CARD_RADIUS,
+            fill=(255, 255, 255, 255),
+            outline=(255, 255, 255, 220),
+            width=2,
+        )
+
+        draw.text((x0 + CARD_PADDING, y0 + 22), label, font=title_font, fill=COLOR_TEXT_PURPLE)
+        value_str = f"{value}" if isinstance(value, int) else f"{value:.1f}" if isinstance(value, float) else str(value)
+        draw.text((x0 + CARD_PADDING, y0 + 72), value_str, font=value_font, fill=ImageColor.getrgb(color) + (255,))
+
+    return start_y + card_height + GAP
 
 
-def _normalize_scores(pilares: Dict[str, float | int | None]) -> List[float]:
+def _normalize_scores(pilares_scores: Dict[str, float]) -> List[float]:
     normalized: List[float] = []
-    for name in PILLAR_NAMES:
-        value = pilares.get(name) if pilares else None
+    for key in PILLAR_NAMES:
+        value = pilares_scores.get(key, 0)
         value_float = float(value or 0)
         normalized.append(max(0.0, min(value_float / 100.0, 1.0)))
     return normalized
 
 
-def _draw_radar(draw: ImageDraw.ImageDraw, center: Tuple[int, int], radius: int, values: Sequence[float], labels: Iterable[str]) -> None:
-    angles = [i * (360 / len(values)) for i in range(len(values))]
+def draw_radar(canvas: Image.Image, start_y: int, payload: dict) -> int:
+    pilares_scores = payload.get("pilares_scores") or {}
+    normalized = _normalize_scores(pilares_scores)
+
+    radar_height = 620
+    box = (MARGIN_OUTER, start_y, WIDTH - MARGIN_OUTER, start_y + radar_height)
+    draw_glass_card(canvas, box, radius=36, blur_radius=24, fill_alpha=82)
+    draw = ImageDraw.Draw(canvas)
+
+    center = (WIDTH // 2, start_y + radar_height // 2 + 20)
+    radius_polygon = 210
+    radius_labels = radius_polygon + 32
+
+    angles = [i * (360 / len(normalized)) for i in range(len(normalized))]
     points: List[Tuple[float, float]] = []
-    for angle_deg, value in zip(angles, values):
-        angle_rad = (angle_deg - 90) * 3.14159 / 180
-        r = radius * value
-        x = center[0] + r * float(__import__("math").cos(angle_rad))
-        y = center[1] + r * float(__import__("math").sin(angle_rad))
+    for angle_deg, value in zip(angles, normalized):
+        angle_rad = math.radians(angle_deg - 90)
+        r = radius_polygon * value
+        x = center[0] + r * math.cos(angle_rad)
+        y = center[1] + r * math.sin(angle_rad)
         points.append((x, y))
 
-    # grid
-    for step in (0.25, 0.5, 0.75, 1.0):
-        grid = []
+    for step in (0.2, 0.4, 0.6, 0.8, 1.0):
+        grid: List[Tuple[float, float]] = []
         for angle_deg in angles:
-            angle_rad = (angle_deg - 90) * 3.14159 / 180
-            r = radius * step
-            grid.append((center[0] + r * float(__import__("math").cos(angle_rad)), center[1] + r * float(__import__("math").sin(angle_rad))))
+            angle_rad = math.radians(angle_deg - 90)
+            r = radius_polygon * step
+            grid.append((center[0] + r * math.cos(angle_rad), center[1] + r * math.sin(angle_rad)))
         draw.polygon(grid, outline=(255, 255, 255, 60))
 
-    draw.polygon(points, fill=(139, 227, 155, 60), outline=ImageColor.getrgb(COLOR_PRIMARY_GREEN) + (200,))
+    draw.polygon(points, fill=(124, 216, 161, 160), outline=ImageColor.getrgb(COLOR_PRIMARY_GREEN) + (220,))
 
-    label_font = _get_font(22, "bold")
-    for angle_deg, label in zip(angles, labels):
-        angle_rad = (angle_deg - 90) * 3.14159 / 180
-        x = center[0] + (radius + RADAR_TEXT_PADDING) * float(__import__("math").cos(angle_rad))
-        y = center[1] + (radius + RADAR_TEXT_PADDING) * float(__import__("math").sin(angle_rad))
+    label_font = _get_font(26, "bold")
+    for angle_deg, label in zip(angles, [name.title() for name in PILLAR_NAMES]):
+        angle_rad = math.radians(angle_deg - 90)
+        x = center[0] + radius_labels * math.cos(angle_rad)
+        y = center[1] + radius_labels * math.sin(angle_rad)
         bbox = draw.textbbox((0, 0), label, font=label_font)
         pos = (int(x - (bbox[2] - bbox[0]) / 2), int(y - (bbox[3] - bbox[1]) / 2))
-        draw.text(pos, label, font=label_font, fill=COLOR_TEXT_MUTED)
+        draw.text(pos, label, font=label_font, fill=COLOR_TEXT_SUBTLE)
 
-    center_font = _get_font(28, "bold")
-    center_bbox = draw.textbbox((0, 0), "Energia", font=center_font)
-    draw.text(
-        (center[0] - (center_bbox[2] - center_bbox[0]) / 2, center[1] - (center_bbox[3] - center_bbox[1]) / 2),
-        "Energia",
-        font=center_font,
-        fill=COLOR_TEXT_PRIMARY,
+    center_font = _get_font(32, "bold")
+    center_box = (
+        center[0] - 140,
+        center[1] - 40,
+        center[0] + 140,
+        center[1] + 40,
     )
+    draw_text_center(draw, center_box, "Energia", font=center_font, fill=COLOR_TEXT_LIGHT)
+
+    return box[3] + GAP
 
 
-def _draw_bottom_cards(draw: ImageDraw.ImageDraw, start_y: int, width: int, payload: dict) -> None:
-    section_width = width - (2 * PADDING)
-    card_width = (section_width - BOTTOM_CARD_GAP) // 2
+def _render_bullets(draw: ImageDraw.ImageDraw, x: int, start_y: int, bullets: Sequence[str], font: ImageFont.ImageFont) -> None:
+    y_cursor = start_y
+    for bullet in [b for b in bullets if str(b).strip()]:
+        draw.text((x, y_cursor), f"• {bullet}", font=font, fill=COLOR_TEXT_SUBTLE)
+        bbox = draw.textbbox((0, 0), f"• {bullet}", font=font)
+        y_cursor += (bbox[3] - bbox[1]) + 12
+
+
+def draw_bottom_cards(canvas: Image.Image, start_y: int, payload: dict) -> int:
+    draw = ImageDraw.Draw(canvas)
+    section_width = WIDTH - 2 * MARGIN_OUTER
+    card_width = int((section_width - GAP) / 2)
+    card_height = 320
+
     titles = ["Comportamentos em Destaque", "Insight NutriSigno"]
     contents: List[Sequence[str] | str] = [
         payload.get("comportamentos") or [],
         payload.get("insight") or "Use seu signo como inspiração de hábitos saudáveis.",
     ]
+
+    title_font = _get_font(32, "bold")
     body_font = _get_font(26)
-    title_font = _get_font(30, "bold")
 
     for idx, title in enumerate(titles):
-        x = PADDING + idx * (card_width + BOTTOM_CARD_GAP)
-        rect = (x, start_y, x + card_width, start_y + BOTTOM_CARD_HEIGHT)
-        draw.rounded_rectangle(rect, radius=28, fill=COLOR_CARD_DARK, outline=COLOR_CARD_BORDER, width=2)
-        draw.text((rect[0] + 24, rect[1] + 22), title, font=title_font, fill=COLOR_TEXT_PRIMARY)
+        x0 = MARGIN_OUTER + idx * (card_width + GAP)
+        y0 = start_y
+        x1 = x0 + card_width
+        y1 = y0 + card_height
+
+        draw.rounded_rectangle((x0, y0, x1, y1), radius=CARD_RADIUS, fill=COLOR_CARD_DARK)
+        draw_glass_card(
+            canvas,
+            (x0, y0, x1, y1),
+            radius=CARD_RADIUS,
+            blur_radius=18,
+            fill_alpha=80,
+            border_alpha=120,
+        )
+
+        draw.text((x0 + CARD_PADDING, y0 + 26), title, font=title_font, fill=COLOR_TEXT_LIGHT)
 
         if idx == 0:
-            bullets: Sequence[str] = [str(item) for item in contents[idx] if str(item).strip()] if isinstance(contents[idx], Iterable) else []
-            y_cursor = rect[1] + 72
-            for bullet in bullets:
-                draw.text((rect[0] + 32, y_cursor), f"• {bullet}", font=body_font, fill=COLOR_TEXT_MUTED)
-                y_cursor += 34
+            _render_bullets(draw, x0 + CARD_PADDING, y0 + 92, contents[idx], body_font)  # type: ignore[arg-type]
         else:
             insight_text = str(contents[idx])
-            draw.multiline_text(
-                (rect[0] + 24, rect[1] + 70),
-                insight_text,
-                font=body_font,
-                fill=COLOR_TEXT_MUTED,
-                spacing=8,
-            )
+            draw_text_left(draw, (x0 + CARD_PADDING, y0 + 92), insight_text, font=body_font, fill=COLOR_TEXT_SUBTLE, spacing=10)
+
+    return start_y + card_height + GAP
+
+
+def draw_footer(canvas: Image.Image, text: str) -> None:
+    draw = ImageDraw.Draw(canvas)
+    font = _get_font(22)
+    bbox = draw.textbbox((0, 0), text, font=font)
+    pos = ((WIDTH - (bbox[2] - bbox[0])) // 2, HEIGHT - 72)
+    draw.text(pos, text, font=font, fill=COLOR_TEXT_SUBTLE)
 
 
 def gerar_card_nutricional(payload_nutricional: dict) -> bytes:
     """Gera o card nutricional em memória e retorna bytes PNG."""
 
-    canvas = _create_vertical_gradient(WIDTH, HEIGHT, COLOR_BACKGROUND_TOP, COLOR_BACKGROUND_BOTTOM)
-    draw = ImageDraw.Draw(canvas)
+    canvas = _create_vertical_gradient(WIDTH, HEIGHT)
 
-    logo = _load_logo(220)
-    if logo:
-        canvas.paste(logo, (PADDING, PADDING), logo)
-
-    header_font = _get_font(40, "bold")
-    sub_font = _get_font(26)
-    nome = str(payload_nutricional.get("nome") or "Paciente").strip() or "Paciente"
-    idade = int(payload_nutricional.get("idade") or 0)
-    signo = str(payload_nutricional.get("signo") or "Signo")
-    header_y = PADDING + (logo.height + 12 if logo else 0)
-    draw.text((PADDING, header_y), nome, font=header_font, fill=COLOR_TEXT_PRIMARY)
-    draw.text((PADDING, header_y + 46), f"{idade} anos • {signo}", font=sub_font, fill=COLOR_TEXT_MUTED)
-
-    next_y = header_y + 110
-    next_y = _draw_top_cards(draw, next_y, WIDTH, payload_nutricional)
-
-    pilares_scores = payload_nutricional.get("pilares_scores") or {}
-    normalized = _normalize_scores(pilares_scores)
-    radar_center = (WIDTH // 2, next_y + RADAR_PADDING + 240)
-    _draw_radar(draw, radar_center, 220, normalized, [name.title() for name in PILLAR_NAMES])
-
-    bottom_start = radar_center[1] + 220 + RADAR_PADDING
-    _draw_bottom_cards(draw, bottom_start, WIDTH, payload_nutricional)
+    y_cursor = draw_header_nutricional(canvas, payload_nutricional)
+    y_cursor = draw_metrics(canvas, y_cursor, payload_nutricional)
+    y_cursor += 120
+    y_cursor = draw_radar(canvas, y_cursor, payload_nutricional)
+    y_cursor = draw_bottom_cards(canvas, y_cursor, payload_nutricional)
+    draw_footer(canvas, "nutrisigno.com • resultado público")
 
     buffer = io.BytesIO()
     canvas.save(buffer, format="PNG")
