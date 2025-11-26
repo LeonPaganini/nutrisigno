@@ -1569,7 +1569,7 @@ def _validate_pre_plan(pre_plan: Dict[str, Any]) -> Dict[str, Any]:
         raise ValueError("Pré-plano sem meta calórica definida.")
 
     kcal_int = int(kcal)
-    if not 1000 <= kcal_int <= 2000:
+    if not 1000 <= kcal_int <= 3500:
         raise ValueError("Meta calórica fora do intervalo esperado (1000–2000).")
 
     porcoes = pre_plan.get("porcoes_por_refeicao") or {}

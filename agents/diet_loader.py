@@ -17,7 +17,7 @@ from typing import Any, Dict, Iterable, Mapping, Tuple
 DATA_DIR = Path(__file__).resolve().parent.parent / "data"
 
 # Conjunto de kcal suportadas pelos planos estáticos (1000–2000).
-SUPPORTED_KCALS = tuple(range(1000, 2001, 100))
+SUPPORTED_KCALS = tuple(range(1000, 3500, 100))
 
 
 class DietCatalogError(RuntimeError):
