@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import html
+import io
 import logging
 import re
 import unicodedata
+import zipfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable, Optional, Sequence, Tuple
@@ -23,9 +25,8 @@ from modules.form.ui_insights import (
     signo_elemento,
     signo_symbol,
 )
-from modules.share_image import gerar_imagem_share
-from modules.behavior_profile_image import gerar_card_comportamental_bytes
 from modules.results_context import PILLAR_NAMES, ensure_pilares_scores
+from core.gerador_imagens import gerar_paginas_resultado
 
 log = logging.getLogger(__name__)
 
@@ -1236,7 +1237,7 @@ def _render_actions(
     insights: Dict[str, Any],
     payload: Dict[str, Any],
     pdf_bytes: bytes,
-    share_bytes: bytes,
+    share_zip_bytes: bytes,
     behavior_bytes: bytes | None = None,
 ) -> None:
     # Espaço vertical antes do bloco de ações
@@ -1263,13 +1264,16 @@ def _render_actions(
             )
 
         with cols[2]:
-            st.download_button(
-                "Compartilhar resultado",
-                data=share_bytes,
-                file_name=f"nutrisigno_{pac_id[:8]}_share.png",
-                mime="image/png",
-                use_container_width=True,
-            )
+            if share_zip_bytes:
+                st.download_button(
+                    "Compartilhar resultado",
+                    data=share_zip_bytes,
+                    file_name=f"nutrisigno_{pac_id[:8]}_share.zip",
+                    mime="application/zip",
+                    use_container_width=True,
+                )
+            else:
+                st.warning("Não foi possível gerar o pacote de compartilhamento.")
 
         if behavior_bytes:
             with cols[3]:
@@ -1310,13 +1314,16 @@ def _render_actions(
             )
 
     with cols[3]:
-        st.download_button(
-            "Compartilhar resultado",
-            data=share_bytes,
-            file_name=f"nutrisigno_{pac_id[:8]}_share.png",
-            mime="image/png",
-            use_container_width=True,
-        )
+        if share_zip_bytes:
+            st.download_button(
+                "Compartilhar resultado",
+                data=share_zip_bytes,
+                file_name=f"nutrisigno_{pac_id[:8]}_share.zip",
+                mime="application/zip",
+                use_container_width=True,
+            )
+        else:
+            st.warning("Não foi possível gerar o pacote de compartilhamento.")
 
     if behavior_bytes:
         with cols[4]:
@@ -1330,6 +1337,23 @@ def _render_actions(
 
     # Espaço depois do bloco de ações (versão paga)
     st.markdown("<div style='margin-bottom: 24px;'></div>", unsafe_allow_html=True)
+
+
+def _build_share_zip(pac_id: str, paginas: Dict[str, bytes]) -> bytes:
+    if not paginas.get("pagina1"):
+        return b""
+
+    buffer = io.BytesIO()
+    try:
+        with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+            zf.writestr(f"nutrisigno_{pac_id}_pagina1.png", paginas["pagina1"])
+            if paginas.get("pagina2"):
+                zf.writestr(f"nutrisigno_{pac_id}_pagina2.png", paginas["pagina2"])
+        buffer.seek(0)
+        return buffer.getvalue()
+    except Exception:
+        log.exception("Falha ao criar ZIP de compartilhamento.")
+        return paginas.get("pagina1") or b""
 
 
 def _redirect_to_form(pac_id: str) -> None:
@@ -1597,8 +1621,22 @@ def main() -> None:
 
     pdf_bytes = build_insights_pdf_bytes(insights)
     share_payload = _build_share_payload(respostas, insights, pilares_scores, bmi, score)
-    share_bytes = gerar_imagem_share(share_payload, formato="story")
-    behavior_bytes: bytes | None = None
+
+    payload_nutricional = {
+        "nome": share_payload.get("primeiro_nome"),
+        "idade": share_payload.get("idade"),
+        "signo": share_payload.get("signo"),
+        "elemento": share_payload.get("elemento"),
+        "imc": share_payload.get("imc"),
+        "score": share_payload.get("score_geral"),
+        "hidratacao": (share_payload.get("pilares_scores") or {}).get("Hidratacao", 0),
+        "pilares_scores": share_payload.get("pilares_scores") or {},
+        "comportamentos": share_payload.get("comportamentos") or [],
+        "insight": share_payload.get("insight_frase") or "",
+    }
+
+    paginas: Dict[str, bytes] = {}
+    payload_comportamental: Dict[str, Any] = {}
     try:
         behavior_content = _build_behavior_profile_content(
             respostas,
@@ -1615,19 +1653,26 @@ def main() -> None:
             or respostas.get("regente_signo")
             or "—"
         )
-        behavior_bytes = gerar_card_comportamental_bytes(
-            nome=share_payload["primeiro_nome"],
-            idade=share_payload["idade"],
-            signo=share_payload["signo"],
-            elemento=share_payload["elemento"],
-            regente=behavior_regente,
-            dados_comportamento=behavior_content,
-            caminho_simbolo_signo=None,
-            fallback_symbol=signo_symbol(share_payload["signo"]),
-        )
+        payload_comportamental = {
+            "nome": share_payload.get("primeiro_nome"),
+            "idade": share_payload.get("idade"),
+            "signo": share_payload.get("signo"),
+            "elemento": share_payload.get("elemento"),
+            "regente": behavior_regente,
+            **behavior_content,
+        }
     except Exception:  # pragma: no cover - geração gráfica opcional
-        log.exception("Falha ao gerar imagem comportamental.")
-    _render_actions(state_info["state"], pac_id, insights, payload, pdf_bytes, share_bytes, behavior_bytes)
+        log.exception("Falha ao compor dados comportamentais.")
+
+    try:
+        paginas = gerar_paginas_resultado(payload_nutricional, payload_comportamental)
+    except Exception:  # pragma: no cover - defensive
+        log.exception("Erro inesperado ao gerar páginas de resultado.")
+        paginas = {}
+
+    behavior_bytes = paginas.get("pagina2")
+    share_zip_bytes = _build_share_zip(pac_id[:8], paginas)
+    _render_actions(state_info["state"], pac_id, insights, payload, pdf_bytes, share_zip_bytes, behavior_bytes)
 
     if state_info["state"] != "S1" and ai_summary:
         with st.expander("Resumo IA (educativo)"):
