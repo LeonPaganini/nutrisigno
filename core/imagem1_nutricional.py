@@ -71,19 +71,20 @@ def _get_font(size: int, weight: str = "regular") -> ImageFont.ImageFont:
 
 
 def _create_vertical_gradient(width: int, height: int, top: str, bottom: str) -> Image.Image:
-    base = Image.new("RGB", (width, height), top)
+    base = Image.new("RGB", (width, height), "white")
     top_r, top_g, top_b = ImageColor.getrgb(top)
     bottom_r, bottom_g, bottom_b = ImageColor.getrgb(bottom)
-    gradient = Image.new("RGB", (1, height))
+    gradient = Image.new("RGBA", (1, height))
     for y in range(height):
         ratio = y / max(height - 1, 1)
         r = int(top_r + (bottom_r - top_r) * ratio)
         g = int(top_g + (bottom_g - top_g) * ratio)
         b = int(top_b + (bottom_b - top_b) * ratio)
-        gradient.putpixel((0, y), (r, g, b))
+        gradient.putpixel((0, y), (r, g, b, 170))
     gradient = gradient.resize((width, height))
-    base.paste(gradient)
-    return base.convert("RGBA")
+    base_rgba = base.convert("RGBA")
+    base_rgba.paste(gradient, (0, 0), gradient)
+    return base_rgba
 
 
 def _load_logo(max_width: int) -> Image.Image | None:
