@@ -1535,8 +1535,8 @@ def _render_plan_sections(state: str, payload: Dict[str, Any]) -> None:
                 refeicao = combo.get("refeicao", "—").capitalize()
                 texto = combo.get("combo", "")
                 st.markdown(f"**{refeicao}:** {texto}")
-    else:
-        st.caption("Sugestões ainda não disponíveis. Assim que processadas, aparecerão aqui.")
+        else:
+            st.caption("Sugestões ainda não disponíveis. Assim que processadas, aparecerão aqui.")
 
 
 # ---------------------------------------------------------------------------
