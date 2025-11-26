@@ -6,7 +6,7 @@ import html
 import logging
 import re
 import unicodedata
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, Optional, Sequence, Tuple
 
@@ -711,7 +711,7 @@ def _calculate_age(raw: Any) -> int:
             continue
     else:
         return 30
-    today = datetime.utcnow().date()
+    today = datetime.now(timezone.utc).date()
     years = today.year - birth.year - ((today.month, today.day) < (birth.month, birth.day))
     if years < 0 or years > 120:
         return 30
@@ -789,9 +789,10 @@ def _build_behavior_profile_content(
     emocional = _unique_lines([stress.get("message"), share_payload.get("insight_frase")])
 
     motivacao_raw = respostas.get("motivacao")
+    motivacao_valor = _to_float(motivacao_raw)
     decisao = _unique_lines(
         [
-            f"Motivação declarada: {int(_to_float(motivacao_raw, motivacao_raw))}/5" if motivacao_raw else "",
+            f"Motivação declarada: {int(motivacao_valor)}/5" if motivacao_valor is not None else "",
             goal,
         ]
     )
@@ -1253,7 +1254,7 @@ def _render_share_modal(paginas: Dict[str, bytes], pac_id: str) -> None:
     file_name = f"nutrisigno_{pac_id[:8]}_pagina{current_page_number}.png"
 
     with st.modal("Compartilhar resultado", key="share_modal"):
-        st.image(paginas[current_key], caption=f"Página {current_page_number}", use_container_width=True)
+        st.image(paginas[current_key], caption=f"Página {current_page_number}", use_column_width=True)
 
         nav_cols = st.columns(3)
         with nav_cols[0]:
@@ -1725,9 +1726,9 @@ def main() -> None:
         paginas = {}
 
     if paginas.get("pagina1"):
-        st.image(paginas["pagina1"], caption="Página 1 - Nutricional", use_container_width=True)
+        st.image(paginas["pagina1"], caption="Página 1 - Nutricional", use_column_width=True)
     if paginas.get("pagina2"):
-        st.image(paginas["pagina2"], caption="Página 2 - Comportamental", use_container_width=True)
+        st.image(paginas["pagina2"], caption="Página 2 - Comportamental", use_column_width=True)
 
     behavior_bytes = paginas.get("pagina2")
     _render_actions(state_info["state"], pac_id, insights, payload, pdf_bytes, paginas, behavior_bytes)
