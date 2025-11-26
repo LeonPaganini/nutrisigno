@@ -1233,28 +1233,32 @@ def _render_interpretations(cards: Iterable[Tuple[str, str]]) -> None:
 def _render_share_modal(paginas: Dict[str, bytes], pac_id: str) -> None:
     page_keys = [key for key in ("pagina1", "pagina2") if paginas.get(key)]
     if not page_keys:
-        st.warning("Nenhuma página disponível para compartilhar no momento.")
+        st.error("Não foi possível gerar as imagens para compartilhamento.")
         return
 
     total_pages = len(page_keys)
     current_idx = min(max(int(st.session_state.get("pagina_atual_compartilhar", 0)), 0), total_pages - 1)
     st.session_state["pagina_atual_compartilhar"] = current_idx
 
-    def _go_previous() -> None:
-        st.session_state["pagina_atual_compartilhar"] = max(0, current_idx - 1)
-
-    def _go_next() -> None:
-        st.session_state["pagina_atual_compartilhar"] = min(total_pages - 1, current_idx + 1)
-
-    def _close_modal() -> None:
-        st.session_state["share_modal_open"] = False
-
     current_key = page_keys[current_idx]
     current_page_number = current_idx + 1
+    current_page_bytes = paginas.get(current_key)
+    if not current_page_bytes:
+        st.error("Não foi possível exibir a página selecionada para compartilhamento.")
+        return
+
+    def _go_previous() -> None:
+        if current_idx > 0:
+            st.session_state["pagina_atual_compartilhar"] = current_idx - 1
+
+    def _go_next() -> None:
+        if current_idx < total_pages - 1:
+            st.session_state["pagina_atual_compartilhar"] = current_idx + 1
+
     file_name = f"nutrisigno_{pac_id[:8]}_pagina{current_page_number}.png"
 
     with st.modal("Compartilhar resultado", key="share_modal"):
-        st.image(paginas[current_key], caption=f"Página {current_page_number}", use_column_width=True)
+        st.image(current_page_bytes, caption=f"Página {current_page_number}", use_column_width=True)
 
         nav_cols = st.columns(3)
         with nav_cols[0]:
@@ -1262,7 +1266,7 @@ def _render_share_modal(paginas: Dict[str, bytes], pac_id: str) -> None:
         with nav_cols[1]:
             st.download_button(
                 "Download",
-                data=paginas[current_key],
+                data=current_page_bytes,
                 file_name=file_name,
                 mime="image/png",
                 use_container_width=True,
@@ -1276,18 +1280,31 @@ def _render_share_modal(paginas: Dict[str, bytes], pac_id: str) -> None:
             )
 
         st.markdown("**Baixar Tudo**")
-        download_cols = st.columns(total_pages)
-        for idx, key in enumerate(page_keys):
-            with download_cols[idx]:
+        col1, col2 = st.columns(2)
+        if paginas.get("pagina1"):
+            with col1:
                 st.download_button(
-                    f"Baixar Página {idx + 1}",
-                    data=paginas[key],
-                    file_name=f"nutrisigno_{pac_id[:8]}_pagina{idx + 1}.png",
+                    "Baixar Página 1",
+                    data=paginas["pagina1"],
+                    file_name=f"nutrisigno_{pac_id[:8]}_pagina1.png",
+                    mime="image/png",
+                    use_container_width=True,
+                )
+        if "pagina2" in paginas and paginas["pagina2"]:
+            with col2:
+                st.download_button(
+                    "Baixar Página 2",
+                    data=paginas["pagina2"],
+                    file_name=f"nutrisigno_{pac_id[:8]}_pagina2.png",
                     mime="image/png",
                     use_container_width=True,
                 )
 
-        st.button("Fechar", use_container_width=True, on_click=_close_modal)
+        st.button(
+            "Fechar",
+            use_container_width=True,
+            on_click=lambda: st.session_state.update({"show_share_modal": False}),
+        )
 
 
 def _render_actions(
@@ -1303,9 +1320,9 @@ def _render_actions(
     st.markdown("<div style='margin-top: 24px;'></div>", unsafe_allow_html=True)
 
     share_available = bool(paginas.get("pagina1"))
-    open_share_modal = False
-
-    st.session_state.setdefault("share_modal_open", False)
+    if not share_available:
+        st.session_state["show_share_modal"] = False
+    st.session_state.setdefault("show_share_modal", False)
     st.session_state.setdefault("pagina_atual_compartilhar", 0)
 
     if state == "S1":
@@ -1331,10 +1348,8 @@ def _render_actions(
         with cols[2]:
             if share_available:
                 if st.button("Compartilhar resultado", use_container_width=True):
-                    st.session_state["share_modal_open"] = True
+                    st.session_state["show_share_modal"] = True
                     st.session_state["pagina_atual_compartilhar"] = 0
-                if st.session_state.get("share_modal_open"):
-                    open_share_modal = True
             else:
                 st.warning("Não foi possível gerar o pacote de compartilhamento.")
 
@@ -1350,7 +1365,7 @@ def _render_actions(
 
         # Espaço depois do bloco (não colar no texto/alerta seguinte)
         st.markdown("<div style='margin-bottom: 24px;'></div>", unsafe_allow_html=True)
-        if open_share_modal and share_available:
+        if st.session_state.get("show_share_modal") and share_available:
             _render_share_modal(paginas, pac_id)
         return
 
@@ -1381,10 +1396,8 @@ def _render_actions(
     with cols[3]:
         if share_available:
             if st.button("Compartilhar resultado", use_container_width=True):
-                st.session_state["share_modal_open"] = True
+                st.session_state["show_share_modal"] = True
                 st.session_state["pagina_atual_compartilhar"] = 0
-            if st.session_state.get("share_modal_open"):
-                open_share_modal = True
         else:
             st.warning("Não foi possível gerar o pacote de compartilhamento.")
 
@@ -1399,7 +1412,7 @@ def _render_actions(
             )
 
     # Espaço depois do bloco de ações (versão paga)
-    if open_share_modal and share_available:
+    if st.session_state.get("show_share_modal") and share_available:
         _render_share_modal(paginas, pac_id)
 
     st.markdown("<div style='margin-bottom: 24px;'></div>", unsafe_allow_html=True)
@@ -1525,6 +1538,9 @@ def _render_plan_sections(state: str, payload: Dict[str, Any]) -> None:
 def main() -> None:
     app_bootstrap.ensure_bootstrap()
     st.set_page_config(page_title="Meu Resultado", page_icon="📊", layout="wide")
+
+    st.session_state.setdefault("show_share_modal", False)
+    st.session_state.setdefault("pagina_atual_compartilhar", 0)
 
     pac_id = _resolve_pac_id()
     if not pac_id:
@@ -1724,11 +1740,6 @@ def main() -> None:
     except Exception:  # pragma: no cover - defensive
         log.exception("Erro inesperado ao gerar páginas de resultado.")
         paginas = {}
-
-    if paginas.get("pagina1"):
-        st.image(paginas["pagina1"], caption="Página 1 - Nutricional", use_column_width=True)
-    if paginas.get("pagina2"):
-        st.image(paginas["pagina2"], caption="Página 2 - Comportamental", use_column_width=True)
 
     behavior_bytes = paginas.get("pagina2")
     _render_actions(state_info["state"], pac_id, insights, payload, pdf_bytes, paginas, behavior_bytes)
