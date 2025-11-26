@@ -1257,7 +1257,17 @@ def _render_share_modal(paginas: Dict[str, bytes], pac_id: str) -> None:
 
     file_name = f"nutrisigno_{pac_id[:8]}_pagina{current_page_number}.png"
 
-    with st.modal("Compartilhar resultado", key="share_modal"):
+    with st.container(border=True):
+        header_cols = st.columns([0.9, 0.1])
+        with header_cols[0]:
+            st.subheader("Compartilhar resultado")
+        with header_cols[1]:
+            st.button(
+                "✕",
+                use_container_width=True,
+                on_click=lambda: st.session_state.update({"show_share_modal": False}),
+            )
+
         st.image(current_page_bytes, caption=f"Página {current_page_number}", use_column_width=True)
 
         nav_cols = st.columns(3)
@@ -1301,9 +1311,7 @@ def _render_share_modal(paginas: Dict[str, bytes], pac_id: str) -> None:
                 )
 
         st.button(
-            "Fechar",
-            use_container_width=True,
-            on_click=lambda: st.session_state.update({"show_share_modal": False}),
+            "Fechar painel", use_container_width=True, on_click=lambda: st.session_state.update({"show_share_modal": False})
         )
 
 
