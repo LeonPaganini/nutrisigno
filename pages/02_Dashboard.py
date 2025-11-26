@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 import html
-import io
 import logging
 import re
 import unicodedata
-import zipfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable, Optional, Sequence, Tuple
@@ -1231,17 +1229,83 @@ def _render_interpretations(cards: Iterable[Tuple[str, str]]) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _render_share_modal(paginas: Dict[str, bytes], pac_id: str) -> None:
+    page_keys = [key for key in ("pagina1", "pagina2") if paginas.get(key)]
+    if not page_keys:
+        st.warning("Nenhuma página disponível para compartilhar no momento.")
+        return
+
+    total_pages = len(page_keys)
+    current_idx = min(max(int(st.session_state.get("pagina_atual_compartilhar", 0)), 0), total_pages - 1)
+    st.session_state["pagina_atual_compartilhar"] = current_idx
+
+    def _go_previous() -> None:
+        st.session_state["pagina_atual_compartilhar"] = max(0, current_idx - 1)
+
+    def _go_next() -> None:
+        st.session_state["pagina_atual_compartilhar"] = min(total_pages - 1, current_idx + 1)
+
+    def _close_modal() -> None:
+        st.session_state["share_modal_open"] = False
+
+    current_key = page_keys[current_idx]
+    current_page_number = current_idx + 1
+    file_name = f"nutrisigno_{pac_id[:8]}_pagina{current_page_number}.png"
+
+    with st.modal("Compartilhar resultado", key="share_modal"):
+        st.image(paginas[current_key], caption=f"Página {current_page_number}", use_container_width=True)
+
+        nav_cols = st.columns(3)
+        with nav_cols[0]:
+            st.button("Anterior", use_container_width=True, disabled=current_idx == 0, on_click=_go_previous)
+        with nav_cols[1]:
+            st.download_button(
+                "Download",
+                data=paginas[current_key],
+                file_name=file_name,
+                mime="image/png",
+                use_container_width=True,
+            )
+        with nav_cols[2]:
+            st.button(
+                "Próxima",
+                use_container_width=True,
+                disabled=current_idx >= total_pages - 1,
+                on_click=_go_next,
+            )
+
+        st.markdown("**Baixar Tudo**")
+        download_cols = st.columns(total_pages)
+        for idx, key in enumerate(page_keys):
+            with download_cols[idx]:
+                st.download_button(
+                    f"Baixar Página {idx + 1}",
+                    data=paginas[key],
+                    file_name=f"nutrisigno_{pac_id[:8]}_pagina{idx + 1}.png",
+                    mime="image/png",
+                    use_container_width=True,
+                )
+
+        st.button("Fechar", use_container_width=True, on_click=_close_modal)
+
+
 def _render_actions(
     state: str,
     pac_id: str,
     insights: Dict[str, Any],
     payload: Dict[str, Any],
     pdf_bytes: bytes,
-    share_zip_bytes: bytes,
+    paginas: Dict[str, bytes],
     behavior_bytes: bytes | None = None,
 ) -> None:
     # Espaço vertical antes do bloco de ações
     st.markdown("<div style='margin-top: 24px;'></div>", unsafe_allow_html=True)
+
+    share_available = bool(paginas.get("pagina1"))
+    open_share_modal = False
+
+    st.session_state.setdefault("share_modal_open", False)
+    st.session_state.setdefault("pagina_atual_compartilhar", 0)
 
     if state == "S1":
         cols = st.columns(4 if behavior_bytes else 3, gap="medium")
@@ -1264,14 +1328,12 @@ def _render_actions(
             )
 
         with cols[2]:
-            if share_zip_bytes:
-                st.download_button(
-                    "Compartilhar resultado",
-                    data=share_zip_bytes,
-                    file_name=f"nutrisigno_{pac_id[:8]}_share.zip",
-                    mime="application/zip",
-                    use_container_width=True,
-                )
+            if share_available:
+                if st.button("Compartilhar resultado", use_container_width=True):
+                    st.session_state["share_modal_open"] = True
+                    st.session_state["pagina_atual_compartilhar"] = 0
+                if st.session_state.get("share_modal_open"):
+                    open_share_modal = True
             else:
                 st.warning("Não foi possível gerar o pacote de compartilhamento.")
 
@@ -1287,6 +1349,8 @@ def _render_actions(
 
         # Espaço depois do bloco (não colar no texto/alerta seguinte)
         st.markdown("<div style='margin-bottom: 24px;'></div>", unsafe_allow_html=True)
+        if open_share_modal and share_available:
+            _render_share_modal(paginas, pac_id)
         return
 
     # Estado com plano IA disponível
@@ -1314,14 +1378,12 @@ def _render_actions(
             )
 
     with cols[3]:
-        if share_zip_bytes:
-            st.download_button(
-                "Compartilhar resultado",
-                data=share_zip_bytes,
-                file_name=f"nutrisigno_{pac_id[:8]}_share.zip",
-                mime="application/zip",
-                use_container_width=True,
-            )
+        if share_available:
+            if st.button("Compartilhar resultado", use_container_width=True):
+                st.session_state["share_modal_open"] = True
+                st.session_state["pagina_atual_compartilhar"] = 0
+            if st.session_state.get("share_modal_open"):
+                open_share_modal = True
         else:
             st.warning("Não foi possível gerar o pacote de compartilhamento.")
 
@@ -1336,24 +1398,10 @@ def _render_actions(
             )
 
     # Espaço depois do bloco de ações (versão paga)
+    if open_share_modal and share_available:
+        _render_share_modal(paginas, pac_id)
+
     st.markdown("<div style='margin-bottom: 24px;'></div>", unsafe_allow_html=True)
-
-
-def _build_share_zip(pac_id: str, paginas: Dict[str, bytes]) -> bytes:
-    if not paginas.get("pagina1"):
-        return b""
-
-    buffer = io.BytesIO()
-    try:
-        with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-            zf.writestr(f"nutrisigno_{pac_id}_pagina1.png", paginas["pagina1"])
-            if paginas.get("pagina2"):
-                zf.writestr(f"nutrisigno_{pac_id}_pagina2.png", paginas["pagina2"])
-        buffer.seek(0)
-        return buffer.getvalue()
-    except Exception:
-        log.exception("Falha ao criar ZIP de compartilhamento.")
-        return paginas.get("pagina1") or b""
 
 
 def _redirect_to_form(pac_id: str) -> None:
@@ -1653,26 +1701,36 @@ def main() -> None:
             or respostas.get("regente_signo")
             or "—"
         )
+        insights_comportamentais = behavior_content or {}
         payload_comportamental = {
             "nome": share_payload.get("primeiro_nome"),
             "idade": share_payload.get("idade"),
             "signo": share_payload.get("signo"),
             "elemento": share_payload.get("elemento"),
             "regente": behavior_regente,
-            **behavior_content,
+            "energia": insights_comportamentais.get("energia", []),
+            "emocional": insights_comportamentais.get("emocional", []),
+            "decisao": insights_comportamentais.get("decisao", []),
+            "rotina": insights_comportamentais.get("rotina", []),
+            "destaques": insights_comportamentais.get("destaques", []),
         }
     except Exception:  # pragma: no cover - geração gráfica opcional
         log.exception("Falha ao compor dados comportamentais.")
 
     try:
+        log.info("payload_comportamental: %s", payload_comportamental)
         paginas = gerar_paginas_resultado(payload_nutricional, payload_comportamental)
     except Exception:  # pragma: no cover - defensive
         log.exception("Erro inesperado ao gerar páginas de resultado.")
         paginas = {}
 
+    if paginas.get("pagina1"):
+        st.image(paginas["pagina1"], caption="Página 1 - Nutricional", use_container_width=True)
+    if paginas.get("pagina2"):
+        st.image(paginas["pagina2"], caption="Página 2 - Comportamental", use_container_width=True)
+
     behavior_bytes = paginas.get("pagina2")
-    share_zip_bytes = _build_share_zip(pac_id[:8], paginas)
-    _render_actions(state_info["state"], pac_id, insights, payload, pdf_bytes, share_zip_bytes, behavior_bytes)
+    _render_actions(state_info["state"], pac_id, insights, payload, pdf_bytes, paginas, behavior_bytes)
 
     if state_info["state"] != "S1" and ai_summary:
         with st.expander("Resumo IA (educativo)"):

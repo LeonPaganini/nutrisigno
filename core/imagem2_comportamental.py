@@ -68,19 +68,20 @@ def _get_font(size: int, weight: str = "regular") -> ImageFont.ImageFont:
 
 
 def _create_vertical_gradient() -> Image.Image:
-    base = Image.new("RGB", (WIDTH, HEIGHT), BACKGROUND_GRADIENT_TOP)
+    base = Image.new("RGB", (WIDTH, HEIGHT), "white")
     top_r, top_g, top_b = ImageColor.getrgb(BACKGROUND_GRADIENT_TOP)
     bottom_r, bottom_g, bottom_b = ImageColor.getrgb(BACKGROUND_GRADIENT_BOTTOM)
-    gradient = Image.new("RGB", (1, HEIGHT))
+    gradient = Image.new("RGBA", (1, HEIGHT))
     for y in range(HEIGHT):
         ratio = y / max(HEIGHT - 1, 1)
         r = int(top_r + (bottom_r - top_r) * ratio)
         g = int(top_g + (bottom_g - top_g) * ratio)
         b = int(top_b + (bottom_b - top_b) * ratio)
-        gradient.putpixel((0, y), (r, g, b))
+        gradient.putpixel((0, y), (r, g, b, 160))
     gradient = gradient.resize((WIDTH, HEIGHT))
-    base.paste(gradient)
-    return base.convert("RGBA")
+    base_rgba = base.convert("RGBA")
+    base_rgba.paste(gradient, (0, 0), gradient)
+    return base_rgba
 
 
 def _tint_symbol(fallback_char: str, max_height: int) -> Image.Image:
