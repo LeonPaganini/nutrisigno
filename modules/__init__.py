@@ -11,6 +11,7 @@ __all__: list[str] = [
     "firebase_utils",
     "openai_utils",
     "pdf_generator",
+    "pdf_generator_v2",
     "dashboard_utils",
     "email_utils",
     "plan_post_payment",
