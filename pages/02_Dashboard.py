@@ -12,7 +12,8 @@ from typing import Any, Dict, Iterable, Optional, Sequence, Tuple
 
 import streamlit as st
 
-from modules import app_bootstrap, openai_utils, repo
+from agents import diet_loader, orchestrator, subs_loader
+from modules import app_bootstrap, openai_utils, pdf_generator_v2, repo
 from modules.client_state import get_user_cached, load_client_state, save_client_state
 from modules.form.exporters import build_insights_pdf_bytes
 from modules.form.ui_insights import (
@@ -1534,9 +1535,173 @@ def _render_plan_sections(state: str, payload: Dict[str, Any]) -> None:
                 refeicao = combo.get("refeicao", "—").capitalize()
                 texto = combo.get("combo", "")
                 st.markdown(f"**{refeicao}:** {texto}")
-        else:
-            st.caption("Sugestões ainda não disponíveis. Assim que processadas, aparecerão aqui.")
+    else:
+        st.caption("Sugestões ainda não disponíveis. Assim que processadas, aparecerão aqui.")
 
+
+# ---------------------------------------------------------------------------
+# Ferramentas de diagnóstico (modo desenvolvedor)
+# ---------------------------------------------------------------------------
+
+
+def _dev_test_user_data() -> Dict[str, Any]:
+    """Retorna um conjunto fixo de dados para o teste do pipeline."""
+
+    return {
+        "nome": "Paciente Teste Pipeline",
+        "email": "pipeline.dev@nutrisigno.dev",
+        "telefone": "+55 (11) 90000-0000",
+        "data_nascimento": "01/01/1990",
+        "sexo": "Feminino",
+        "idade": 32,
+        "altura_cm": 165,
+        "peso_kg": 62,
+        "nivel_atividade": "Moderado",
+        "objetivo": "Manutenção",
+        "restricoes": "",
+    }
+
+
+def _validate_pre_plan(pre_plan: Dict[str, Any]) -> Dict[str, Any]:
+    macros = pre_plan.get("macros") or {}
+    kcal = macros.get("kcal")
+    if kcal is None:
+        raise ValueError("Pré-plano sem meta calórica definida.")
+
+    kcal_int = int(kcal)
+    if not 1000 <= kcal_int <= 2000:
+        raise ValueError("Meta calórica fora do intervalo esperado (1000–2000).")
+
+    porcoes = pre_plan.get("porcoes_por_refeicao") or {}
+    if not porcoes:
+        raise ValueError("Pré-plano não contém porções por refeição.")
+
+    status = pre_plan.get("status")
+    if status != "aguardando_pagamento":
+        raise ValueError(f"Status inesperado do pré-plano: {status}")
+
+    sample_meal = next(iter(porcoes.items()))
+
+    return {
+        "kcal": kcal_int,
+        "dieta_pdf_kcal": pre_plan.get("dieta_pdf_kcal"),
+        "porcoes_por_refeicao": porcoes,
+        "sample_meal": sample_meal,
+        "status": status,
+    }
+
+
+def _run_dev_pipeline_test() -> Dict[str, Any]:
+    ok_bootstrap, bootstrap_msg = app_bootstrap.ensure_bootstrap()
+    if not ok_bootstrap:
+        raise RuntimeError(f"Bootstrap falhou: {bootstrap_msg}")
+
+    dados_usuario = _dev_test_user_data()
+
+    diets_raw = diet_loader.load_diets()
+    subs_raw = subs_loader.load_substitutions()
+
+    pre_plan = orchestrator.gerar_plano_pre_pagamento(dados_usuario)
+    validation = _validate_pre_plan(pre_plan)
+
+    plano_compacto = {
+        "pre_plano": {
+            "dieta_pdf_kcal": pre_plan.get("dieta_pdf_kcal"),
+            "status": pre_plan.get("status"),
+        },
+        "porcoes_por_refeicao": pre_plan.get("porcoes_por_refeicao"),
+    }
+
+    pac_id = repo.upsert_patient_payload(
+        pac_id=None,
+        respostas=dados_usuario,
+        plano=pre_plan,
+        plano_compacto=plano_compacto,
+        macros=pre_plan.get("macros") or {},
+        name=dados_usuario.get("nome"),
+        email=dados_usuario.get("email"),
+    )
+
+    saved_payload = repo.get_by_pac_id(pac_id) if pac_id else None
+    if not saved_payload:
+        raise RuntimeError("Pré-plano salvo não foi encontrado no banco.")
+
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    pdf_path = Path("outputs") / f"test_pipeline_{timestamp}.pdf"
+    pdf_path_str = pdf_generator_v2.generate_pre_payment_pdf(
+        saved_payload,
+        pdf_path,
+        incluir_cardapio=False,
+    )
+
+    return {
+        "bootstrap_msg": bootstrap_msg,
+        "diets_count": len(diets_raw.get("dietas", [])) if isinstance(diets_raw, dict) else 0,
+        "subs_count": len(subs_raw.get("categorias", {})) if isinstance(subs_raw, dict) else 0,
+        "pre_plan": pre_plan,
+        "validation": validation,
+        "pac_id": pac_id,
+        "saved_payload": saved_payload,
+        "pdf_path": pdf_path_str,
+    }
+
+
+def _render_dev_pipeline_tester() -> None:
+    st.session_state.setdefault("dev_pipeline_result", None)
+
+    dev_mode = st.checkbox("Ativar modo desenvolvedor", value=False)
+    if not dev_mode:
+        return
+
+    with st.expander("🔧 Teste de Pipeline NutriSigno"):
+        st.caption(
+            "Ferramenta de diagnóstico interno. Executa o pipeline determinístico de pré-pagamento "
+            "para validar loaders, orquestrador, repositório e PDF sem alterar a experiência do usuário."
+        )
+
+        if st.button("🔍 Testar pipeline de plano alimentar (dev)", type="secondary"):
+            with st.spinner("Validando pipeline pré-pagamento..."):
+                try:
+                    st.session_state.dev_pipeline_result = _run_dev_pipeline_test()
+                    st.success("Pipeline executado com sucesso.")
+                except Exception as exc:  # pragma: no cover - ferramenta de debug
+                    log.exception("Falha ao testar pipeline de diagnóstico")
+                    st.session_state.dev_pipeline_result = None
+                    st.error(f"Falha ao testar o pipeline: {exc}")
+
+        result = st.session_state.get("dev_pipeline_result")
+        if not result:
+            st.info("Clique no botão acima para rodar o teste de ponta a ponta.")
+            return
+
+        validation = result.get("validation", {})
+        sample_meal = validation.get("sample_meal") or ("—", {})
+
+        success_items = [
+            f"✅ JSONs carregados com sucesso ({result.get('diets_count', 0)} dietas, {result.get('subs_count', 0)} categorias)",
+            f"✅ Orquestrador retornou plano com {validation.get('kcal')} kcal (dieta base {validation.get('dieta_pdf_kcal')} kcal)",
+            f"✅ Pré-plano salvo no banco, pac_id = {result.get('pac_id')}",
+            f"✅ PDF gerado em: {result.get('pdf_path')}",
+        ]
+        st.markdown("\n".join(f"- {item}" for item in success_items))
+
+        st.write("**Kcal alvo:**", validation.get("kcal"))
+        st.write(f"**Status:** {validation.get('status')} · **Kcal PDF:** {validation.get('dieta_pdf_kcal')}")
+
+        refeicao, itens = sample_meal
+        st.markdown(f"**Exemplo de refeição:** {refeicao}")
+        st.json(itens)
+
+        pdf_path = result.get("pdf_path")
+        if pdf_path and Path(pdf_path).exists():
+            pdf_bytes = Path(pdf_path).read_bytes()
+            st.download_button(
+                "Baixar PDF de teste",
+                data=pdf_bytes,
+                file_name=Path(pdf_path).name,
+                mime="application/pdf",
+            )
+            st.caption(f"Arquivo gerado em: {pdf_path}")
 
 # ---------------------------------------------------------------------------
 # Função principal
@@ -1757,6 +1922,8 @@ def main() -> None:
             st.write(ai_summary)
 
     _render_plan_sections(state_info["state"], payload)
+
+    _render_dev_pipeline_tester()
 
     st.caption("Compartilhe apenas com pessoas de confiança. NutriSigno é um apoio educativo, não substitui acompanhamento clínico.")
 
