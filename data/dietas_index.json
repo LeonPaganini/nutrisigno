@@ -1,6 +1,187 @@
 {
   "dietas": [
     {
+      "kcal": 1000,
+      "arquivo": "/mnt/data/DIETA 1000 Kcal.pdf",
+      "refeicoes_por_porcoes": {
+        "Desjejum": {
+          "Carboidratos": "1 porção",
+          "Fruta": "1 porção",
+          "Gordura": "1 porção"
+        },
+        "Colação": {
+          "Fruta": "1 porção",
+          "Gordura": "1 porção"
+        },
+        "Almoço": {
+          "Proteína Baixo Teor de Gordura": "1 porção",
+          "Proteína Vegetal": "1 porção",
+          "Carboidrato": "1 porção",
+          "Vegetais e Hortaliças": "2 porções",
+          "Fruta": "1 porção"
+        },
+        "Lanche": {
+          "Fruta": "1 porção"
+        },
+        "Jantar": {
+          "Proteína Baixo Teor de Gordura": "1 porção",
+          "Carboidrato": "1 porção",
+          "Vegetais e Hortaliças": "2 porções",
+          "Fruta": "1 porção"
+        },
+        "Ceia": {
+          "Fruta": "1 porção"
+        }
+      }
+    },
+    {
+      "kcal": 1100,
+      "arquivo": "/mnt/data/DIETA 1100 Kcal.pdf",
+      "refeicoes_por_porcoes": {
+        "Desjejum": {
+          "Carboidratos": "2 porções",
+          "Fruta ou Suco da Fruta": "2 porções",
+          "Gordura": "1 porção"
+        },
+        "Colação": {
+          "Fruta": "1 porção",
+          "Gordura": "1 porção"
+        },
+        "Almoço": {
+          "Vegetais e Hortaliças": "1 porção",
+          "Carboidrato": "1 porção",
+          "Proteína Baixo Teor de Gordura": "1/2 porção",
+          "Gordura": "1 porção"
+        },
+        "Lanche": {
+          "Fruta": "2 porções"
+        },
+        "Jantar": {
+          "Vegetais e Hortaliças": "2 porções",
+          "Carboidrato": "1 porção",
+          "Proteína Baixo Teor de Gordura": "1 porção",
+          "Gordura": "1 porção"
+        },
+        "Ceia": {
+          "Fruta": "1 porção"
+        }
+      }
+    },
+    {
+      "kcal": 1200,
+      "arquivo": "/mnt/data/DIETA 1200 Kcal.pdf",
+      "refeicoes_por_porcoes": {
+        "Desjejum": {
+          "Carboidratos": "2 porções",
+          "Laticínio magro": "1 porção",
+          "Gordura": "1 porção"
+        },
+        "Colação": {
+          "Gordura": "2 porções"
+        },
+        "Almoço": {
+          "Proteína Baixo Teor de Gordura": "1 porção",
+          "Proteína Vegetal": "1/2 porção",
+          "Carboidrato": "1 porção",
+          "Vegetais e Hortaliças": "1 porção",
+          "Gordura": "1 porção",
+          "Fruta": "1 porção"
+        },
+        "Lanche": {
+          "Carboidrato": "1 porção",
+          "Fruta": "1 porção",
+          "Laticínio magro": "1 porção"
+        },
+        "Jantar": {
+          "Proteína Baixo Teor de Gordura": "1 porção",
+          "Carboidrato": "1 porção",
+          "Vegetais e Hortaliças": "1 porção",
+          "Fruta": "1 porção",
+          "Gordura": "1 porção"
+        },
+        "Ceia": {
+          "Fruta": "1 porção"
+        }
+      }
+    },
+    {
+      "kcal": 1300,
+      "arquivo": "/mnt/data/DIETA 1300 Kcal.pdf",
+      "refeicoes_por_porcoes": {
+        "Desjejum": {
+          "Carboidratos": "2 porções",
+          "Laticínio magro": "1 porção",
+          "Gordura": "1 porção",
+          "Fruta": "1 porção"
+        },
+        "Colação": {
+          "Gordura": "1 porção",
+          "Fruta": "1 porção"
+        },
+        "Almoço": {
+          "Proteína Baixo Teor de Gordura": "1 porção",
+          "Proteína Vegetal": "1/2 porção",
+          "Carboidrato": "1 porção",
+          "Vegetais e Hortaliças": "2 porções",
+          "Gordura": "1 porção",
+          "Fruta": "1 porção"
+        },
+        "Lanche": {
+          "Carboidrato": "1 porção",
+          "Fruta": "1 porção"
+        },
+        "Jantar": {
+          "Proteína Baixo Teor de Gordura": "1 porção",
+          "Carboidrato": "1 porção",
+          "Vegetais e Hortaliças": "1 porção",
+          "Fruta": "1 porção",
+          "Gordura": "1 porção"
+        },
+        "Ceia": {
+          "Fruta": "1 porção",
+          "Gordura": "1 porção"
+        }
+      }
+    },
+    {
+      "kcal": 1400,
+      "arquivo": "/mnt/data/DIETA 1400 Kcal.pdf",
+      "refeicoes_por_porcoes": {
+        "Desjejum": {
+          "Carboidratos": "2 porções",
+          "Laticínio magro": "1 porção",
+          "Gordura": "1 porção"
+        },
+        "Colação": {
+          "Fruta": "1 porção",
+          "Gordura": "1 porção"
+        },
+        "Almoço": {
+          "Carboidrato": "1 porção",
+          "Vegetais e Hortaliças": "2 porções",
+          "Proteína Vegetal": "1/2 porção",
+          "Proteína Baixo Teor de Gordura": "1 porção",
+          "Gordura": "1 porção",
+          "Fruta": "1 porção"
+        },
+        "Lanche": {
+          "Carboidrato": "2 porções",
+          "Gordura": "1 porção",
+          "Fruta": "2 porções"
+        },
+        "Jantar": {
+          "Carboidrato": "1 porção",
+          "Vegetais e Hortaliças": "2 porções",
+          "Proteína Baixo Teor de Gordura": "1 porção",
+          "Gordura": "1 porção",
+          "Fruta": "1 porção"
+        },
+        "Ceia": {
+          "Fruta": "1 porção"
+        }
+      }
+    },
+    {
       "kcal": 1500,
       "arquivo": "/mnt/data/DIETA 1500 Kcal.pdf",
       "refeicoes_por_porcoes": {
