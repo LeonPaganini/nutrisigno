@@ -156,6 +156,7 @@ def gerar_refeicao_concreta(
         "descricao": template.get("descricao"),
         "itens": itens_concretos,
         "exemplo_prato": template.get("exemplo_prato", []),
+        "slots": dict(slots),
     }
 
 
@@ -285,6 +286,8 @@ def gerar_plano_diario_simulado(
                 "descricao": template.get("descricao"),
                 "slots": dict(slots),
                 "itens_escolhidos": itens_escolhidos,
+                "exemplo_prato": template.get("exemplo_prato", []),
+                "template_tipo_refeicao": bloco["chave"],
             }
         )
 
