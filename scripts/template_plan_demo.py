@@ -26,7 +26,8 @@ TEMPLATE_CHOICES: Dict[str, str] = {
 
 
 def _primeiro_item_da_categoria(categoria: str, substituicoes: Dict[str, Any]) -> Dict[str, str]:
-    catalogo = substituicoes.get(categoria)
+    categorias = substituicoes.get("categorias", substituicoes)
+    catalogo = categorias.get(categoria)
     if not isinstance(catalogo, dict):
         raise ValueError(f"Categoria de substituição não encontrada: {categoria}")
 
@@ -38,11 +39,13 @@ def _primeiro_item_da_categoria(categoria: str, substituicoes: Dict[str, Any]) -
     if isinstance(item_bruto, dict):
         nome = str(item_bruto.get("nome", ""))
         porcao = str(item_bruto.get("porcao", "1 porção")) or "1 porção"
+        id_alimento = item_bruto.get("id_alimento")
     else:
         nome = str(item_bruto)
         porcao = "1 porção"
+        id_alimento = None
 
-    return {"nome": nome, "porcao": porcao}
+    return {"id_alimento": id_alimento, "nome": nome, "porcao": porcao}
 
 
 def _montar_itens_exemplo(slots: Dict[str, Any], substituicoes: Dict[str, Any]) -> List[Dict[str, str]]:

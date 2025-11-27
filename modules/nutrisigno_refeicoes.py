@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import json
 import random
+import re
+import unicodedata
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping
 
@@ -27,6 +29,35 @@ SLOT_TO_CATEGORIES: Dict[str, List[str]] = {
     "laticinio": ["Laticinios_magros", "Laticinios_medio_alto_gordura"],
     "gordura": ["Gorduras"],
 }
+
+
+def _slugify(texto: str) -> str:
+    """Normaliza um texto removendo acentos e espaços.
+
+    Essa função é usada tanto para criar ``id_alimento`` quanto para permitir
+    comparações consistentes por nome. Mantemos apenas caracteres
+    alfanuméricos, convertendo sequências de separadores em ``_``.
+    """
+
+    texto = unicodedata.normalize("NFKD", texto)
+    texto = texto.encode("ascii", "ignore").decode("ascii")
+    texto = texto.lower()
+    texto = re.sub(r"[^a-z0-9]+", "_", texto)
+    return texto.strip("_")
+
+
+def _gerar_id_alimento(categoria: str, nome: str) -> str:
+    """Gera ``id_alimento`` determinístico para cada item do catálogo."""
+
+    categoria_slug = _slugify(categoria)
+    nome_slug = _slugify(nome)
+    return f"{categoria_slug}__{nome_slug}"
+
+
+def _normalizar_nome_alimento(nome: str) -> str:
+    """Normaliza nomes para busca em índices por nome."""
+
+    return _slugify(nome)
 
 
 def _load_json(path: str | Path) -> Mapping[str, Any]:
@@ -59,24 +90,58 @@ def carregar_templates(caminho: str) -> Dict[str, List[Dict[str, Any]]]:
 
 
 def carregar_substituicoes(caminho: str) -> Dict[str, Any]:
-    """Lê ``substituicoes.json`` e retorna o dicionário de categorias.
+    """Lê ``substituicoes.json`` e retorna categorias enriquecidas com ``id_alimento``.
 
-    Args:
-        caminho: Caminho para o arquivo de substituições.
-
-    Returns:
-        Dicionário contendo as categorias e respectivos itens.
-
-    Raises:
-        FileNotFoundError: Caso o arquivo não exista.
-        json.JSONDecodeError: Caso o arquivo não seja um JSON válido.
+    Além de garantir a estrutura esperada, esta função cria identificadores
+    estáveis para todos os alimentos e constrói índices por nome e por ID para
+    facilitar consultas durante a geração das refeições.
     """
 
     data = _load_json(caminho)
     categorias = data.get("categorias")
     if not isinstance(categorias, dict):
         raise ValueError("Estrutura de substituições inválida: chave 'categorias' ausente")
-    return categorias
+
+    categorias_enriquecidas: Dict[str, Dict[str, Any]] = {}
+    indice_por_nome: Dict[str, List[Dict[str, Any]]] = {}
+    indice_por_id: Dict[str, Dict[str, Any]] = {}
+
+    for categoria, dados in categorias.items():
+        itens_brutos = dados.get("itens") if isinstance(dados, Mapping) else None
+        if not itens_brutos:
+            continue
+
+        itens_processados: List[Dict[str, Any]] = []
+        for raw_item in itens_brutos:
+            if isinstance(raw_item, Mapping):
+                nome = str(raw_item.get("nome", ""))
+                porcao = str(raw_item.get("porcao", "1 porção")) or "1 porção"
+            else:
+                nome = str(raw_item)
+                porcao = "1 porção"
+
+            # IDs determinísticos para cada alimento do catálogo.
+            id_alimento = _gerar_id_alimento(categoria, nome)
+            nome_normalizado = _normalizar_nome_alimento(nome)
+            item_processado = {
+                "id_alimento": id_alimento,
+                "nome": nome,
+                "porcao": porcao,
+                "categoria": categoria,
+                "nome_normalizado": nome_normalizado,
+            }
+
+            indice_por_id[id_alimento] = item_processado
+            indice_por_nome.setdefault(nome_normalizado, []).append(item_processado)
+            itens_processados.append(item_processado)
+
+        categorias_enriquecidas[categoria] = {"itens": itens_processados}
+
+    return {
+        "categorias": categorias_enriquecidas,
+        "indice_alimentos_por_nome": indice_por_nome,
+        "indice_alimentos_por_id": indice_por_id,
+    }
 
 
 def listar_modelos_refeicao(templates: Mapping[str, Any], tipo_refeicao: str) -> List[Dict[str, Any]]:
@@ -88,6 +153,27 @@ def listar_modelos_refeicao(templates: Mapping[str, Any], tipo_refeicao: str) ->
     if not isinstance(modelos, Iterable):
         raise ValueError(f"Estrutura inválida para o tipo de refeição: {tipo_refeicao}")
     return list(modelos)
+
+
+def _obter_categorias(substituicoes: Mapping[str, Any]) -> Mapping[str, Any]:
+    """Obtém o dicionário de categorias, seja ele raiz ou dentro de ``categorias``."""
+
+    if "categorias" in substituicoes:
+        categorias = substituicoes.get("categorias")
+        if isinstance(categorias, Mapping):
+            return categorias
+    return substituicoes
+
+
+def _obter_indices(substituicoes: Mapping[str, Any]) -> tuple[Dict[str, List[Dict[str, Any]]], Dict[str, Dict[str, Any]]]:
+    """Retorna os índices por nome e por ID se estiverem presentes."""
+
+    indice_nome = substituicoes.get("indice_alimentos_por_nome", {}) if isinstance(substituicoes, Mapping) else {}
+    indice_id = substituicoes.get("indice_alimentos_por_id", {}) if isinstance(substituicoes, Mapping) else {}
+    return (
+        indice_nome if isinstance(indice_nome, Mapping) else {},
+        indice_id if isinstance(indice_id, Mapping) else {},
+    )
 
 
 def obter_template_por_id(
@@ -112,43 +198,176 @@ def _escolher_categoria(slot: str, rng: random.Random | None = None) -> str:
 
 
 def _sortear_item(categoria: str, substituicoes: Mapping[str, Any], rng: random.Random) -> Dict[str, str]:
-    catalogo = substituicoes.get(categoria)
+    categorias = _obter_categorias(substituicoes)
+    catalogo = categorias.get(categoria)
     if catalogo is None:
         raise ValueError(f"Categoria de substituição não encontrada: {categoria}")
     itens = catalogo.get("itens") if isinstance(catalogo, Mapping) else None
     if not itens:
         raise ValueError(f"Categoria sem itens disponíveis: {categoria}")
+
     item = rng.choice(list(itens))
     if isinstance(item, Mapping):
         nome = str(item.get("nome", ""))
         porcao = str(item.get("porcao", "1 porção")) or "1 porção"
+        id_alimento = item.get("id_alimento")
     else:
         nome = str(item)
         porcao = "1 porção"
-    return {"nome": nome, "porcao": porcao, "categoria": categoria}
+        id_alimento = _gerar_id_alimento(categoria, nome)
+
+    return {
+        "id_alimento": id_alimento,
+        "nome": nome,
+        "porcao": porcao,
+        "categoria": categoria,
+    }
+
+
+def _priorizar_leguminosas(candidatos: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Reordena candidatos priorizando feijões e grão-de-bico."""
+
+    prioridade: List[Dict[str, Any]] = []
+    demais: List[Dict[str, Any]] = []
+    for candidato in candidatos:
+        nome_norm = candidato.get("nome_normalizado") or _normalizar_nome_alimento(
+            candidato.get("nome", "")
+        )
+        if re.search(r"feij(ao|oes)|grao_de_bico", nome_norm):
+            prioridade.append(candidato)
+        else:
+            demais.append(candidato)
+    return prioridade + demais
+
+
+def _selecionar_por_exemplo(
+    slot: str,
+    exemplo_prato: Iterable[Mapping[str, Any]] | None,
+    substituicoes: Mapping[str, Any],
+) -> Dict[str, Any] | None:
+    """Tenta encontrar um item do exemplo_prato no índice por nome."""
+
+    categorias_aceitas = SLOT_TO_CATEGORIES.get(slot, [])
+    indice_nome, _ = _obter_indices(substituicoes)
+    for exemplo in exemplo_prato or []:
+        nome_exemplo = str(exemplo.get("nome", ""))
+        if not nome_exemplo:
+            continue
+        nome_norm = _normalizar_nome_alimento(nome_exemplo)
+        candidatos = [
+            c
+            for c in indice_nome.get(nome_norm, [])
+            if c.get("categoria") in categorias_aceitas
+        ]
+        if slot == "leguminosa":
+            candidatos = _priorizar_leguminosas(candidatos)
+        if candidatos:
+            # Prioriza o alimento que casa diretamente com o exemplo_prato.
+            return dict(candidatos[0])
+    return None
+
+
+def _selecionar_por_categoria(
+    slot: str,
+    substituicoes: Mapping[str, Any],
+    rng: random.Random,
+    priorizar_ordem: bool,
+) -> Dict[str, Any]:
+    """Fallback genérico: escolhe item dentro das categorias compatíveis."""
+
+    categorias_aceitas = SLOT_TO_CATEGORIES.get(slot)
+    if not categorias_aceitas:
+        raise ValueError(f"Slot desconhecido: {slot}")
+
+    categorias = _obter_categorias(substituicoes)
+    candidatos: List[Dict[str, Any]] = []
+    for categoria in categorias_aceitas:
+        catalogo = categorias.get(categoria) or {}
+        itens = catalogo.get("itens", []) if isinstance(catalogo, Mapping) else []
+        for item in itens:
+            if isinstance(item, Mapping):
+                candidatos.append(dict(item))
+
+    if not candidatos:
+        raise ValueError(f"Nenhum item disponível para o slot {slot}")
+
+    if slot == "leguminosa":
+        candidatos = _priorizar_leguminosas(candidatos)
+
+    if priorizar_ordem:
+        return candidatos[0]
+    return rng.choice(candidatos)
+
+
+def _escolher_item_para_slot(
+    slot: str,
+    quantidade: int,
+    exemplo_prato: Iterable[Mapping[str, Any]] | None,
+    substituicoes: Mapping[str, Any],
+    rng: random.Random,
+    priorizar_exemplo_prato: bool,
+) -> List[Dict[str, Any]]:
+    """Seleciona os itens concretos para um slot.
+
+    A função primeiro tenta casar com ``exemplo_prato`` quando solicitado e,
+    se falhar, aplica o fallback genérico de categorias.
+    """
+
+    itens: List[Dict[str, Any]] = []
+    for _ in range(quantidade):
+        escolhido: Dict[str, Any] | None = None
+        if priorizar_exemplo_prato:
+            # Prioriza casar o slot com o exemplo_prato do template.
+            escolhido = _selecionar_por_exemplo(slot, exemplo_prato, substituicoes)
+        if escolhido is None and exemplo_prato and not priorizar_exemplo_prato:
+            # Mesmo no modo menos restritivo, tentar casar pelo exemplo auxilia na coerência.
+            escolhido = _selecionar_por_exemplo(slot, exemplo_prato, substituicoes)
+
+        if escolhido is None:
+            # Fallback genérico: sorteia dentro das categorias compatíveis.
+            escolhido = _selecionar_por_categoria(
+                slot, substituicoes, rng, priorizar_ordem=priorizar_exemplo_prato
+            )
+
+        escolhido["slot"] = str(slot)
+        itens.append(escolhido)
+    return itens
 
 
 def gerar_refeicao_concreta(
     template: Mapping[str, Any],
     substituicoes: Mapping[str, Any],
     rng: random.Random | None = None,
+    priorizar_exemplo_prato: bool = True,
 ) -> Dict[str, Any]:
-    """Gera uma refeição concreta a partir de um modelo e do catálogo de substituições."""
+    """Gera uma refeição concreta priorizando a coerência com o exemplo do template.
+
+    Quando ``priorizar_exemplo_prato`` está habilitado, cada slot tenta casar
+    com itens do ``exemplo_prato`` utilizando os índices por nome/ID. Caso não
+    haja correspondência, ocorre um fallback para as categorias compatíveis.
+    """
 
     rng = rng or random.Random()
     slots = template.get("slots")
     if not isinstance(slots, Mapping):
         raise ValueError("Template inválido: chave 'slots' ausente")
 
-    itens_concretos: List[Dict[str, str]] = []
+    itens_concretos: List[Dict[str, Any]] = []
+    exemplo_prato = template.get("exemplo_prato", []) if isinstance(template, Mapping) else []
+
     for slot, quantidade in slots.items():
         if not isinstance(quantidade, int) or quantidade < 1:
             raise ValueError(f"Quantidade inválida para o slot {slot}: {quantidade}")
-        for _ in range(quantidade):
-            categoria = _escolher_categoria(str(slot), rng)
-            item = _sortear_item(categoria, substituicoes, rng)
-            item["slot"] = str(slot)
-            itens_concretos.append(item)
+        itens_concretos.extend(
+            _escolher_item_para_slot(
+                str(slot),
+                quantidade,
+                exemplo_prato,
+                substituicoes,
+                rng,
+                priorizar_exemplo_prato,
+            )
+        )
 
     return {
         "id": template.get("id"),
@@ -165,7 +384,8 @@ def gerar_substituicoes_para_item(
 ) -> List[Dict[str, str]]:
     """Retorna uma lista de opções de substituição para a categoria informada."""
 
-    catalogo = substituicoes.get(categoria)
+    categorias = _obter_categorias(substituicoes)
+    catalogo = categorias.get(categoria)
     if catalogo is None:
         raise ValueError(f"Categoria de substituição não encontrada: {categoria}")
 
@@ -178,10 +398,21 @@ def gerar_substituicoes_para_item(
         if isinstance(raw_item, Mapping):
             nome = str(raw_item.get("nome", ""))
             porcao = str(raw_item.get("porcao", "1 porção")) or "1 porção"
+            id_alimento = raw_item.get("id_alimento") or _gerar_id_alimento(
+                categoria, nome
+            )
         else:
             nome = str(raw_item)
             porcao = "1 porção"
-        resultados.append({"nome": nome, "porcao": porcao, "categoria": categoria})
+            id_alimento = _gerar_id_alimento(categoria, nome)
+        resultados.append(
+            {
+                "id_alimento": id_alimento,
+                "nome": nome,
+                "porcao": porcao,
+                "categoria": categoria,
+            }
+        )
     return resultados
 
 
@@ -207,21 +438,21 @@ def _montar_itens_para_template(
     if not isinstance(slots, Mapping):
         raise ValueError("Template inválido: chave 'slots' ausente")
 
-    itens: List[Dict[str, str]] = []
+    itens: List[Dict[str, Any]] = []
+    exemplo_prato = template.get("exemplo_prato", []) if isinstance(template, Mapping) else []
     for slot, quantidade in slots.items():
         if not isinstance(quantidade, int) or quantidade < 1:
             raise ValueError(f"Quantidade inválida para o slot {slot}: {quantidade}")
-        for _ in range(quantidade):
-            categoria = _escolher_categoria(str(slot), rng)
-            item = _sortear_item(categoria, substituicoes, rng)
-            itens.append(
-                {
-                    "slot": str(slot),
-                    "categoria": item["categoria"],
-                    "nome": item["nome"],
-                    "porcao": item["porcao"],
-                }
+        itens.extend(
+            _escolher_item_para_slot(
+                str(slot),
+                quantidade,
+                exemplo_prato,
+                substituicoes,
+                rng,
+                priorizar_exemplo_prato=True,
             )
+        )
     return itens
 
 
