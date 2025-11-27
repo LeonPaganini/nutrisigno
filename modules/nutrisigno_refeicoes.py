@@ -184,6 +184,137 @@ def gerar_substituicoes_para_item(
     return resultados
 
 
+def _selecionar_template_aleatorio(
+    templates: Mapping[str, Any], tipo_refeicao: str, rng: random.Random
+) -> Dict[str, Any]:
+    """Seleciona um template existente para o tipo informado."""
+
+    modelos = listar_modelos_refeicao(templates, tipo_refeicao)
+    if not modelos:
+        raise ValueError(f"Nenhum template disponível para o tipo {tipo_refeicao}")
+    return dict(rng.choice(modelos))
+
+
+def _montar_itens_para_template(
+    template: Mapping[str, Any],
+    substituicoes: Mapping[str, Any],
+    rng: random.Random,
+) -> List[Dict[str, str]]:
+    """Gera a lista de itens concretos respeitando os slots do template."""
+
+    slots = template.get("slots")
+    if not isinstance(slots, Mapping):
+        raise ValueError("Template inválido: chave 'slots' ausente")
+
+    itens: List[Dict[str, str]] = []
+    for slot, quantidade in slots.items():
+        if not isinstance(quantidade, int) or quantidade < 1:
+            raise ValueError(f"Quantidade inválida para o slot {slot}: {quantidade}")
+        for _ in range(quantidade):
+            categoria = _escolher_categoria(str(slot), rng)
+            item = _sortear_item(categoria, substituicoes, rng)
+            itens.append(
+                {
+                    "slot": str(slot),
+                    "categoria": item["categoria"],
+                    "nome": item["nome"],
+                    "porcao": item["porcao"],
+                }
+            )
+    return itens
+
+
+def _gerar_resumo_textual(paciente: Mapping[str, Any], plano_diario: List[Dict[str, Any]]) -> str:
+    """Cria um texto simples descrevendo o plano alimentar."""
+
+    partes: List[str] = []
+    nome_paciente = paciente.get("nome", "Paciente")
+    partes.append(
+        f"Plano alimentar de 1 dia para {nome_paciente}, pensado para {paciente.get('objetivo', 'o objetivo informado')}"
+    )
+    for refeicao in plano_diario:
+        itens = refeicao.get("itens_escolhidos", [])
+        itens_descritos = ", ".join(
+            f"{item.get('nome')} ({item.get('porcao')})" for item in itens if item.get("nome")
+        )
+        partes.append(
+            f"{refeicao.get('tipo_refeicao')}: {refeicao.get('descricao')} — {itens_descritos}"
+        )
+    return " . ".join(partes)
+
+
+def gerar_plano_diario_simulado(
+    paciente: Mapping[str, Any],
+    templates_path: str,
+    substituicoes_path: str,
+    rng_seed: int | None = None,
+) -> Dict[str, Any]:
+    """Gera um plano alimentar de 1 dia seguindo estritamente os templates."""
+
+    rng = random.Random(rng_seed)
+    try:
+        templates = carregar_templates(templates_path)
+        substituicoes = carregar_substituicoes(substituicoes_path)
+    except Exception as exc:  # pragma: no cover - proteção simples
+        return {
+            "erro": "Falha ao carregar templates_refeicoes.json ou substituicoes.json",
+            "detalhes": str(exc),
+        }
+
+    plano_diario: List[Dict[str, Any]] = []
+    tipos_refeicao = [
+        {"tipo": "Desjejum", "chave": "Desjejum"},
+        {"tipo": "Almoço", "chave": "Almoço"},
+        {"tipo": "Lanche da tarde", "chave": "Lanche"},
+        {"tipo": "Jantar", "chave": "Jantar"},
+        {"tipo": "Ceia", "chave": "Ceia"},
+    ]
+
+    for bloco in tipos_refeicao:
+        try:
+            template = _selecionar_template_aleatorio(templates, bloco["chave"], rng)
+            itens_escolhidos = _montar_itens_para_template(template, substituicoes, rng)
+        except Exception as exc:  # pragma: no cover - fluxo de proteção
+            return {"erro": "Falha ao gerar refeição", "detalhes": str(exc)}
+
+        slots = template.get("slots") if isinstance(template.get("slots"), Mapping) else {}
+        plano_diario.append(
+            {
+                "tipo_refeicao": bloco["tipo"],
+                "template_id": template.get("id"),
+                "descricao": template.get("descricao"),
+                "slots": dict(slots),
+                "itens_escolhidos": itens_escolhidos,
+            }
+        )
+
+    resumo_textual = _gerar_resumo_textual(paciente, plano_diario)
+    return {"paciente": dict(paciente), "plano_diario": plano_diario, "resumo_textual": resumo_textual}
+
+
+def teste_end_to_end_simulado() -> Dict[str, Any]:
+    """Executa o fluxo completo solicitado para o cenário fictício."""
+
+    paciente_teste = {
+        "nome": "Paciente Teste",
+        "sexo": "feminino",
+        "idade": 32,
+        "altura_m": 1.63,
+        "peso_kg": 72,
+        "objetivo": "emagrecimento leve",
+        "signo": "Leão",
+    }
+
+    templates_path = str(Path("data") / "templates_refeicoes.json")
+    substituicoes_path = str(Path("data") / "substituicoes.json")
+
+    return gerar_plano_diario_simulado(
+        paciente=paciente_teste,
+        templates_path=templates_path,
+        substituicoes_path=substituicoes_path,
+    )
+
+
 def montar_refeicao_e_substituicoes(
     templates_path: str,
     substituicoes_path: str,
