@@ -1,0 +1,898 @@
+{
+  "modelos_refeicao": {
+    "Desjejum": [
+      {
+        "id": "Desjejum1",
+        "descricao": "Pão francês com manteiga + café com leite + fruta",
+        "slots": {
+          "carboidrato": 1,
+          "laticinio": 1,
+          "fruta": 1,
+          "gordura": 1
+        },
+        "exemplo_prato": [
+          {
+            "nome": "Pão francês",
+            "porcao": "1/2 unidade"
+          },
+          {
+            "nome": "Margarina",
+            "porcao": "1 colher de chá"
+          },
+          {
+            "nome": "Leite integral",
+            "porcao": "1 copo de 200 mL"
+          },
+          {
+            "nome": "Mamão papaia",
+            "porcao": "1/2 unidade"
+          }
+        ]
+      },
+      {
+        "id": "Desjejum2",
+        "descricao": "Tapioca simples + ovo mexido + fruta",
+        "slots": {
+          "carboidrato": 1,
+          "proteina_animal": 1,
+          "fruta": 1
+        },
+        "exemplo_prato": [
+          {
+            "nome": "Tapioca",
+            "porcao": "2 colheres de sopa"
+          },
+          {
+            "nome": "Ovo inteiro",
+            "porcao": "1 unidade"
+          },
+          {
+            "nome": "Banana prata",
+            "porcao": "1 unidade pequena"
+          }
+        ]
+      },
+      {
+        "id": "Desjejum3",
+        "descricao": "Pão integral + queijo minas + fruta",
+        "slots": {
+          "carboidrato": 1,
+          "laticinio": 1,
+          "fruta": 1
+        },
+        "exemplo_prato": [
+          {
+            "nome": "Pão de forma integral",
+            "porcao": "1 fatia"
+          },
+          {
+            "nome": "Queijo minas frescal",
+            "porcao": "1 fatia média"
+          },
+          {
+            "nome": "Maçã",
+            "porcao": "1 unidade média"
+          }
+        ]
+      },
+      {
+        "id": "Desjejum4",
+        "descricao": "Cuscuz simples + ovo cozido + café preto",
+        "slots": {
+          "carboidrato": 1,
+          "proteina_animal": 1
+        },
+        "exemplo_prato": [
+          {
+            "nome": "Aveia em flocos",
+            "porcao": "2 colheres de sopa"
+          },
+          {
+            "nome": "Ovo inteiro",
+            "porcao": "1 unidade"
+          },
+          {
+            "nome": "Leite desnatado",
+            "porcao": "1 copo de 280 mL"
+          }
+        ]
+      },
+      {
+        "id": "Desjejum5",
+        "descricao": "Iogurte natural + aveia + fruta picada",
+        "slots": {
+          "laticinio": 1,
+          "carboidrato": 1,
+          "fruta": 1
+        },
+        "exemplo_prato": [
+          {
+            "nome": "Iogurte natural desnatado",
+            "porcao": "1 copo de 170 mL"
+          },
+          {
+            "nome": "Aveia em flocos",
+            "porcao": "2 colheres de sopa"
+          },
+          {
+            "nome": "Morango",
+            "porcao": "1 e 1/2 xícara de chá"
+          }
+        ]
+      },
+      {
+        "id": "Desjejum6",
+        "descricao": "Vitamina de leite com fruta + torrada integral",
+        "slots": {
+          "laticinio": 1,
+          "carboidrato": 1,
+          "fruta": 1
+        },
+        "exemplo_prato": [
+          {
+            "nome": "Leite semidesnatado",
+            "porcao": "1 copo de 220 mL"
+          },
+          {
+            "nome": "Banana prata",
+            "porcao": "1 unidade pequena"
+          },
+          {
+            "nome": "Torrada",
+            "porcao": "2 unidades"
+          }
+        ]
+      },
+      {
+        "id": "Desjejum7",
+        "descricao": "Mingau de aveia simples + fruta",
+        "slots": {
+          "carboidrato": 1,
+          "fruta": 1
+        },
+        "exemplo_prato": [
+          {
+            "nome": "Aveia em flocos",
+            "porcao": "2 colheres de sopa"
+          },
+          {
+            "nome": "Leite desnatado",
+            "porcao": "1 copo de 280 mL"
+          },
+          {
+            "nome": "Laranja",
+            "porcao": "1 unidade pequena"
+          }
+        ]
+      },
+      {
+        "id": "Desjejum8",
+        "descricao": "Ovos mexidos + pão francês",
+        "slots": {
+          "proteina_animal": 1,
+          "carboidrato": 1
+        },
+        "exemplo_prato": [
+          {
+            "nome": "Ovo inteiro",
+            "porcao": "1 unidade"
+          },
+          {
+            "nome": "Pão francês",
+            "porcao": "1/2 unidade"
+          }
+        ]
+      }
+    ],
+
+    "Almoço": [
+      {
+        "id": "Almoco1",
+        "descricao": "Arroz + feijão + frango grelhado + salada + fruta",
+        "slots": {
+          "carboidrato": 1,
+          "leguminosa": 1,
+          "proteina_animal": 1,
+          "vegetais": 1,
+          "fruta": 1
+        },
+        "exemplo_prato": [
+          {
+            "nome": "Arroz branco",
+            "porcao": "3 colheres de sopa"
+          },
+          {
+            "nome": "Feijões (cozidos)",
+            "porcao": "4 colheres de sopa"
+          },
+          {
+            "nome": "Filé de frango",
+            "porcao": "1 filé pequeno"
+          },
+          {
+            "nome": "Alface",
+            "porcao": "porção livre"
+          },
+          {
+            "nome": "Tomate",
+            "porcao": "porção livre"
+          },
+          {
+            "nome": "Maçã",
+            "porcao": "1 unidade média"
+          }
+        ]
+      },
+      {
+        "id": "Almoco2",
+        "descricao": "Arroz + feijão + carne moída + legumes",
+        "slots": {
+          "carboidrato": 1,
+          "leguminosa": 1,
+          "proteina_animal": 1,
+          "vegetais": 1
+        },
+        "exemplo_prato": [
+          {
+            "nome": "Arroz parboilizado",
+            "porcao": "3 colheres de sopa"
+          },
+          {
+            "nome": "Feijões (cozidos)",
+            "porcao": "4 colheres de sopa"
+          },
+          {
+            "nome": "Carne moída",
+            "porcao": "5 colheres de sopa"
+          },
+          {
+            "nome": "Cenoura",
+            "porcao": "porção livre"
+          },
+          {
+            "nome": "Brócolis",
+            "porcao": "porção livre"
+          }
+        ]
+      },
+      {
+        "id": "Almoco3",
+        "descricao": "Macarrão + frango desfiado + salada",
+        "slots": {
+          "carboidrato": 1,
+          "proteina_animal": 1,
+          "vegetais": 1
+        },
+        "exemplo_prato": [
+          {
+            "nome": "Macarrão",
+            "porcao": "3 colheres de sopa"
+          },
+          {
+            "nome": "Filé de frango",
+            "porcao": "1 filé pequeno"
+          },
+          {
+            "nome": "Repolho",
+            "porcao": "porção livre"
+          },
+          {
+            "nome": "Cenoura",
+            "porcao": "porção livre"
+          }
+        ]
+      },
+      {
+        "id": "Almoco4",
+        "descricao": "Batata cozida + carne cozida + legumes",
+        "slots": {
+          "carboidrato": 1,
+          "proteina_animal": 1,
+          "vegetais": 1
+        },
+        "exemplo_prato": [
+          {
+            "nome": "Batata inglesa cozida",
+            "porcao": "1 e 1/2 colher de sopa"
+          },
+          {
+            "nome": "Filé mignon cru",
+            "porcao": "1 bife pequeno"
+          },
+          {
+            "nome": "Abobrinha",
+            "porcao": "porção livre"
+          },
+          {
+            "nome": "Chuchu",
+            "porcao": "porção livre"
+          }
+        ]
+      },
+      {
+        "id": "Almoco5",
+        "descricao": "Arroz integral + feijão + ovo cozido + salada",
+        "slots": {
+          "carboidrato": 1,
+          "leguminosa": 1,
+          "proteina_animal": 1,
+          "vegetais": 1
+        },
+        "exemplo_prato": [
+          {
+            "nome": "Arroz integral",
+            "porcao": "2 colheres de sopa"
+          },
+          {
+            "nome": "Feijões (cozidos)",
+            "porcao": "4 colheres de sopa"
+          },
+          {
+            "nome": "Ovo inteiro",
+            "porcao": "1 unidade"
+          },
+          {
+            "nome": "Rúcula",
+            "porcao": "porção livre"
+          }
+        ]
+      },
+      {
+        "id": "Almoco6",
+        "descricao": "Macarrão + carne moída + legumes ao vapor + fruta",
+        "slots": {
+          "carboidrato": 1,
+          "proteina_animal": 1,
+          "vegetais": 1,
+          "fruta": 1
+        },
+        "exemplo_prato": [
+          {
+            "nome": "Macarrão",
+            "porcao": "3 colheres de sopa"
+          },
+          {
+            "nome": "Carne moída",
+            "porcao": "5 colheres de sopa"
+          },
+          {
+            "nome": "Vagem",
+            "porcao": "porção livre"
+          },
+          {
+            "nome": "Laranja",
+            "porcao": "1 unidade pequena"
+          }
+        ]
+      },
+      {
+        "id": "Almoco7",
+        "descricao": "Cuscuz + frango grelhado + legumes grelhados",
+        "slots": {
+          "carboidrato": 1,
+          "proteina_animal": 1,
+          "vegetais": 1
+        },
+        "exemplo_prato": [
+          {
+            "nome": "Quinoa (cozida)",
+            "porcao": "3 colheres de sopa"
+          },
+          {
+            "nome": "Filé de frango",
+            "porcao": "1 filé pequeno"
+          },
+          {
+            "nome": "Berinjela",
+            "porcao": "porção livre"
+          },
+          {
+            "nome": "Abobrinha",
+            "porcao": "porção livre"
+          }
+        ]
+      },
+      {
+        "id": "Almoco8",
+        "descricao": "Purê de batata + carne assada + salada",
+        "slots": {
+          "carboidrato": 1,
+          "proteina_animal": 1,
+          "vegetais": 1
+        },
+        "exemplo_prato": [
+          {
+            "nome": "Batata baroa (mandioquinha) cozida",
+            "porcao": "2 colheres de sopa"
+          },
+          {
+            "nome": "Fraldinha",
+            "porcao": "2 bifes pequenos de 100 g"
+          },
+          {
+            "nome": "Alface",
+            "porcao": "porção livre"
+          },
+          {
+            "nome": "Tomate",
+            "porcao": "porção livre"
+          }
+        ]
+      }
+    ],
+
+    "Lanche": [
+      {
+        "id": "Lanche1",
+        "descricao": "Fruta + castanhas",
+        "slots": {
+          "fruta": 1,
+          "gordura": 1
+        },
+        "exemplo_prato": [
+          {
+            "nome": "Maçã",
+            "porcao": "1 unidade média"
+          },
+          {
+            "nome": "Castanha de caju",
+            "porcao": "6 unidades"
+          }
+        ]
+      },
+      {
+        "id": "Lanche2",
+        "descricao": "Iogurte natural + fruta picada",
+        "slots": {
+          "laticinio": 1,
+          "fruta": 1
+        },
+        "exemplo_prato": [
+          {
+            "nome": "Iogurte natural desnatado",
+            "porcao": "1 copo de 170 mL"
+          },
+          {
+            "nome": "Manga",
+            "porcao": "1 fatia média"
+          }
+        ]
+      },
+      {
+        "id": "Lanche3",
+        "descricao": "Pão integral + queijo branco",
+        "slots": {
+          "carboidrato": 1,
+          "laticinio": 1
+        },
+        "exemplo_prato": [
+          {
+            "nome": "Pão de forma integral",
+            "porcao": "1 fatia"
+          },
+          {
+            "nome": "Queijo minas frescal",
+            "porcao": "1 fatia média"
+          }
+        ]
+      },
+      {
+        "id": "Lanche4",
+        "descricao": "Vitamina de fruta simples",
+        "slots": {
+          "laticinio": 1,
+          "fruta": 1
+        },
+        "exemplo_prato": [
+          {
+            "nome": "Leite desnatado",
+            "porcao": "1 copo de 280 mL"
+          },
+          {
+            "nome": "Banana prata",
+            "porcao": "1 unidade pequena"
+          }
+        ]
+      },
+      {
+        "id": "Lanche5",
+        "descricao": "Biscoito água e sal + chá",
+        "slots": {
+          "carboidrato": 1
+        },
+        "exemplo_prato": [
+          {
+            "nome": "Torrada",
+            "porcao": "2 unidades"
+          }
+        ]
+      },
+      {
+        "id": "Lanche6",
+        "descricao": "Ovo cozido + fruta",
+        "slots": {
+          "proteina_animal": 1,
+          "fruta": 1
+        },
+        "exemplo_prato": [
+          {
+            "nome": "Ovo inteiro",
+            "porcao": "1 unidade"
+          },
+          {
+            "nome": "Uva Itália ou Rubi",
+            "porcao": "15 bagos"
+          }
+        ]
+      },
+      {
+        "id": "Lanche7",
+        "descricao": "Torrada integral + requeijão",
+        "slots": {
+          "carboidrato": 1,
+          "laticinio": 1
+        },
+        "exemplo_prato": [
+          {
+            "nome": "Torrada",
+            "porcao": "2 unidades"
+          },
+          {
+            "nome": "Requeijão",
+            "porcao": "1 colher de sopa"
+          }
+        ]
+      },
+      {
+        "id": "Lanche8",
+        "descricao": "Banana + aveia",
+        "slots": {
+          "fruta": 1,
+          "carboidrato": 1
+        },
+        "exemplo_prato": [
+          {
+            "nome": "Banana prata",
+            "porcao": "1 unidade pequena"
+          },
+          {
+            "nome": "Aveia em flocos",
+            "porcao": "2 colheres de sopa"
+          }
+        ]
+      }
+    ],
+
+    "Jantar": [
+      {
+        "id": "Jantar1",
+        "descricao": "Arroz + feijão + frango + salada",
+        "slots": {
+          "carboidrato": 1,
+          "leguminosa": 1,
+          "proteina_animal": 1,
+          "vegetais": 1
+        },
+        "exemplo_prato": [
+          {
+            "nome": "Arroz branco",
+            "porcao": "3 colheres de sopa"
+          },
+          {
+            "nome": "Feijões (cozidos)",
+            "porcao": "4 colheres de sopa"
+          },
+          {
+            "nome": "Filé de frango",
+            "porcao": "1 filé pequeno"
+          },
+          {
+            "nome": "Alface",
+            "porcao": "porção livre"
+          }
+        ]
+      },
+      {
+        "id": "Jantar2",
+        "descricao": "Macarrão + carne moída + legumes",
+        "slots": {
+          "carboidrato": 1,
+          "proteina_animal": 1,
+          "vegetais": 1
+        },
+        "exemplo_prato": [
+          {
+            "nome": "Macarrão",
+            "porcao": "3 colheres de sopa"
+          },
+          {
+            "nome": "Carne moída",
+            "porcao": "5 colheres de sopa"
+          },
+          {
+            "nome": "Couve-flor",
+            "porcao": "porção livre"
+          }
+        ]
+      },
+      {
+        "id": "Jantar3",
+        "descricao": "Omelete + arroz + salada",
+        "slots": {
+          "proteina_animal": 1,
+          "carboidrato": 1,
+          "vegetais": 1
+        },
+        "exemplo_prato": [
+          {
+            "nome": "Ovo inteiro",
+            "porcao": "1 unidade"
+          },
+          {
+            "nome": "Arroz parboilizado",
+            "porcao": "3 colheres de sopa"
+          },
+          {
+            "nome": "Tomate",
+            "porcao": "porção livre"
+          }
+        ]
+      },
+      {
+        "id": "Jantar4",
+        "descricao": "Batata cozida + frango desfiado + legumes",
+        "slots": {
+          "carboidrato": 1,
+          "proteina_animal": 1,
+          "vegetais": 1
+        },
+        "exemplo_prato": [
+          {
+            "nome": "Batata doce cozida",
+            "porcao": "4 rodelas"
+          },
+          {
+            "nome": "Filé de frango",
+            "porcao": "1 filé pequeno"
+          },
+          {
+            "nome": "Cenoura",
+            "porcao": "porção livre"
+          },
+          {
+            "nome": "Abobrinha",
+            "porcao": "porção livre"
+          }
+        ]
+      },
+      {
+        "id": "Jantar5",
+        "descricao": "Sopa de legumes com carne",
+        "slots": {
+          "proteina_animal": 1,
+          "vegetais": 1,
+          "carboidrato": 1
+        },
+        "exemplo_prato": [
+          {
+            "nome": "Batata inglesa cozida",
+            "porcao": "1 e 1/2 colher de sopa"
+          },
+          {
+            "nome": "Carne moída",
+            "porcao": "5 colheres de sopa"
+          },
+          {
+            "nome": "Cenoura",
+            "porcao": "porção livre"
+          },
+          {
+            "nome": "Abóbora",
+            "porcao": "porção livre"
+          }
+        ]
+      },
+      {
+        "id": "Jantar6",
+        "descricao": "Arroz integral + feijão + ovo cozido",
+        "slots": {
+          "carboidrato": 1,
+          "leguminosa": 1,
+          "proteina_animal": 1
+        },
+        "exemplo_prato": [
+          {
+            "nome": "Arroz integral",
+            "porcao": "2 colheres de sopa"
+          },
+          {
+            "nome": "Feijões (cozidos)",
+            "porcao": "4 colheres de sopa"
+          },
+          {
+            "nome": "Ovo inteiro",
+            "porcao": "1 unidade"
+          }
+        ]
+      },
+      {
+        "id": "Jantar7",
+        "descricao": "Macarrão simples + frango grelhado + salada",
+        "slots": {
+          "carboidrato": 1,
+          "proteina_animal": 1,
+          "vegetais": 1
+        },
+        "exemplo_prato": [
+          {
+            "nome": "Macarrão",
+            "porcao": "3 colheres de sopa"
+          },
+          {
+            "nome": "Filé de frango",
+            "porcao": "1 filé pequeno"
+          },
+          {
+            "nome": "Repolho",
+            "porcao": "porção livre"
+          }
+        ]
+      },
+      {
+        "id": "Jantar8",
+        "descricao": "Cuscuz + carne cozida + legumes",
+        "slots": {
+          "carboidrato": 1,
+          "proteina_animal": 1,
+          "vegetais": 1
+        },
+        "exemplo_prato": [
+          {
+            "nome": "Quinoa (cozida)",
+            "porcao": "3 colheres de sopa"
+          },
+          {
+            "nome": "Cação",
+            "porcao": "1 posta pequena"
+          },
+          {
+            "nome": "Brócolis",
+            "porcao": "porção livre"
+          }
+        ]
+      }
+    ],
+
+    "Ceia": [
+      {
+        "id": "Ceia1",
+        "descricao": "Leite morno + banana",
+        "slots": {
+          "laticinio": 1,
+          "fruta": 1
+        },
+        "exemplo_prato": [
+          {
+            "nome": "Leite desnatado",
+            "porcao": "1 copo de 280 mL"
+          },
+          {
+            "nome": "Banana prata",
+            "porcao": "1 unidade pequena"
+          }
+        ]
+      },
+      {
+        "id": "Ceia2",
+        "descricao": "Iogurte natural",
+        "slots": {
+          "laticinio": 1
+        },
+        "exemplo_prato": [
+          {
+            "nome": "Iogurte natural light",
+            "porcao": "1 pote"
+          }
+        ]
+      },
+      {
+        "id": "Ceia3",
+        "descricao": "Fruta + castanhas",
+        "slots": {
+          "fruta": 1,
+          "gordura": 1
+        },
+        "exemplo_prato": [
+          {
+            "nome": "Pêra",
+            "porcao": "1/2 unidade grande"
+          },
+          {
+            "nome": "Castanha-do-pará",
+            "porcao": "1 unidade grande"
+          }
+        ]
+      },
+      {
+        "id": "Ceia4",
+        "descricao": "Biscoito água e sal + chá",
+        "slots": {
+          "carboidrato": 1
+        },
+        "exemplo_prato": [
+          {
+            "nome": "Torrada",
+            "porcao": "2 unidades"
+          }
+        ]
+      },
+      {
+        "id": "Ceia5",
+        "descricao": "Vitamina de leite com fruta",
+        "slots": {
+          "laticinio": 1,
+          "fruta": 1
+        },
+        "exemplo_prato": [
+          {
+            "nome": "Leite semidesnatado",
+            "porcao": "1 copo de 220 mL"
+          },
+          {
+            "nome": "Mamão papaia",
+            "porcao": "1/2 unidade"
+          }
+        ]
+      },
+      {
+        "id": "Ceia6",
+        "descricao": "Ovo cozido",
+        "slots": {
+          "proteina_animal": 1
+        },
+        "exemplo_prato": [
+          {
+            "nome": "Ovo inteiro",
+            "porcao": "1 unidade"
+          }
+        ]
+      },
+      {
+        "id": "Ceia7",
+        "descricao": "Torrada integral + requeijão",
+        "slots": {
+          "carboidrato": 1,
+          "laticinio": 1
+        },
+        "exemplo_prato": [
+          {
+            "nome": "Torrada",
+            "porcao": "2 unidades"
+          },
+          {
+            "nome": "Requeijão",
+            "porcao": "1 colher de sopa"
+          }
+        ]
+      },
+      {
+        "id": "Ceia8",
+        "descricao": "Banana + aveia",
+        "slots": {
+          "fruta": 1,
+          "carboidrato": 1
+        },
+        "exemplo_prato": [
+          {
+            "nome": "Banana prata",
+            "porcao": "1 unidade pequena"
+          },
+          {
+            "nome": "Aveia em flocos",
+            "porcao": "2 colheres de sopa"
+          }
+        ]
+      }
+    ]
+  }
+}
