@@ -31,6 +31,7 @@ from reportlab.pdfgen import canvas
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from . import email_utils, repo
+from . import nutrisigno_refeicoes
 
 log = logging.getLogger(__name__)
 
@@ -43,6 +44,9 @@ PLAN_CATALOG_PATH = Path(
 )
 SUBSTITUTIONS_PATH = Path(
     os.getenv("SUBSTITUTIONS_PATH", DATA_DIR / "substituicoes.json")
+)
+TEMPLATES_PATH = Path(
+    os.getenv("MEAL_TEMPLATES_PATH", DATA_DIR / "templates_refeicoes.json")
 )
 
 SUGGESTION_VERSION = "v1"
@@ -355,6 +359,85 @@ def generate_combos(
 
     timestamp = datetime.utcnow().isoformat()
     return {"versao": SUGGESTION_VERSION, "timestamp": timestamp, "combos": combos}
+
+
+def build_template_menu(
+    plan: PlanDefinition,
+    pac_id: str,
+    *,
+    templates_path: Path = TEMPLATES_PATH,
+    substitutions_path: Path = SUBSTITUTIONS_PATH,
+) -> Dict[str, Any]:
+    """Monta um cardápio diário a partir do JSON de templates de refeição.
+
+    O resultado segue o formato esperado por :mod:`pdf_generator_v2`, com
+    ``descricao_dia`` e a lista ``refeicoes`` contendo opções padrão e
+    substituições. A escolha dos templates é determinística a partir de
+    ``pac_id`` para manter reprodutibilidade no pipeline.
+    """
+
+    rng = random.Random(pac_id)
+    templates = nutrisigno_refeicoes.carregar_templates(str(templates_path))
+    substitutions = nutrisigno_refeicoes.carregar_substituicoes(str(substitutions_path))
+
+    refeicoes: List[Dict[str, Any]] = []
+    descricoes: List[str] = []
+
+    for meal in plan.refeicoes_por_porcoes.keys():
+        try:
+            modelos = nutrisigno_refeicoes.listar_modelos_refeicao(templates, meal)
+        except ValueError:
+            log.warning("template.meal_not_found", extra={"meal": meal})
+            continue
+
+        if not modelos:
+            continue
+
+        template_escolhido = rng.choice(modelos)
+        template_escolhido = dict(template_escolhido)
+        template_escolhido["tipo_refeicao"] = meal
+
+        refeicao = nutrisigno_refeicoes.gerar_refeicao_concreta(
+            template_escolhido, substitutions, rng
+        )
+
+        opcoes_substituicao: Dict[str, List[str]] = {}
+        for item in refeicao.get("itens", []):
+            categoria = item.get("categoria")
+            slot = item.get("slot") or "Categoria"
+            if not categoria:
+                continue
+            substitutos = nutrisigno_refeicoes.gerar_substituicoes_para_item(
+                str(categoria), substitutions, limite=4
+            )
+            opcoes_substituicao[slot] = [
+                f"{opt.get('nome')} ({opt.get('porcao')})".strip()
+                for opt in substitutos
+            ]
+
+        refeicoes.append(
+            {
+                "nome_refeicao": meal,
+                "descricao_template": template_escolhido.get("descricao"),
+                "refeicao_padrao": [
+                    {
+                        "alimento": item.get("nome") or "Item",
+                        "categoria_porcoes": item.get("slot") or item.get("categoria"),
+                        "porcoes_equivalentes": item.get("porcao") or "1 porção",
+                    }
+                    for item in refeicao.get("itens", [])
+                ],
+                "opcoes_substituicao": opcoes_substituicao,
+                "comentario_astrologico": "",
+            }
+        )
+        descricoes.append(f"{meal.lower()}: {template_escolhido.get('descricao')}")
+
+    return {
+        "descricao_dia": "Cardápio gerado a partir dos templates NutriSigno.",
+        "refeicoes": refeicoes,
+        "resumo_templates": "; ".join(descricoes),
+    }
 
 
 def _watermark_canvas(canv: canvas.Canvas) -> None:
@@ -734,6 +817,14 @@ def process_post_payment(pac_id: str) -> Dict[str, Any]:
         lambda: generate_combos(plan, lookup, pac_id),
     )
 
+    cardapio_dia = _execute_with_retries(
+        "cardapio_templates",
+        lambda: build_template_menu(plan, pac_id),
+    )
+
+    cardapio_ia = dict(combos)
+    cardapio_ia["cardapio_dia"] = cardapio_dia
+
     pdf_url = _execute_with_retries(
         "pdf",
         lambda: build_consolidated_pdf(
@@ -744,7 +835,7 @@ def process_post_payment(pac_id: str) -> Dict[str, Any]:
             faixa=faixa,
             plan=plan,
             substitutions_public=substitutions_public,
-            combos=combos,
+            combos=cardapio_ia,
         ),
     )
 
@@ -752,7 +843,7 @@ def process_post_payment(pac_id: str) -> Dict[str, Any]:
         pac_id,
         plano_ia={"kcal": plan.kcal, "arquivo": plan.arquivo, "kcal_alvo": target_kcal},
         substituicoes=substitutions_public,
-        cardapio_ia=combos,
+        cardapio_ia=cardapio_ia,
         pdf_completo_url=pdf_url,
         status_plano="disponivel",
     )
@@ -760,7 +851,7 @@ def process_post_payment(pac_id: str) -> Dict[str, Any]:
     result = {
         "plano_ia": {"kcal": plan.kcal, "arquivo": plan.arquivo, "kcal_alvo": target_kcal},
         "substituicoes": substitutions_public,
-        "cardapio_ia": combos,
+        "cardapio_ia": cardapio_ia,
         "pdf_completo_url": pdf_url,
         "status_plano": "disponivel",
     }
