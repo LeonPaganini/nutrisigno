@@ -25,6 +25,7 @@ from .subs_loader import (
     load_catalog as load_substitution_catalog,
     load_substitutions,
 )
+from .cardapio_builder import build_cardapio
 
 __all__ = [
     # Dietas
@@ -49,4 +50,6 @@ __all__ = [
     "list_categories",
     "load_substitution_catalog",
     "load_substitutions",
+    # Cardápio
+    "build_cardapio",
 ]
