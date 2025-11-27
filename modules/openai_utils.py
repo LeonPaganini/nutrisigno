@@ -1,32 +1,52 @@
 # modules/openai_utils.py
 from __future__ import annotations
-import os, json, math, hashlib, random
+
+import hashlib
+import json
+import os
+import random
 from typing import Any, Dict
 
-SIMULATE = os.getenv("SIMULATE", "0") == "1" or not os.getenv("OPENAI_API_KEY")
 
 try:
     from openai import OpenAI
 except Exception:
     OpenAI = None  # ok no modo simulado
 
+
+def _should_simulate() -> bool:
+    """Retorna ``True`` quando devemos usar o modo offline.
+
+    Avaliamos as variáveis de ambiente a cada chamada para garantir que
+    ``OPENAI_API_KEY`` seja considerado mesmo se carregado depois do import
+    do módulo (ex.: via ``.streamlit/secrets.toml``).
+    """
+
+    return os.getenv("SIMULATE", "0") == "1" or not os.getenv("OPENAI_API_KEY")
+
+
 # -------- utilidades internas (simulação determinística) --------
 def _seed_from_payload(payload: Dict[str, Any]) -> int:
     h = hashlib.md5(json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8")).hexdigest()
     return int(h[:8], 16)
 
+
 def _estimate_calories(peso: float, altura_cm: float, atividade: str, objetivo: str) -> int:
     # Mifflin-St Jeor aproximado + fator atividade
     bmr = 10 * peso + 6.25 * altura_cm - 5 * int(float(payload_or(30, "idade")))  # idade default 30
-    fa = {"sedentário":1.2,"leve":1.375,"moderado":1.55,"alto":1.725,"intenso":1.725}
+    fa = {"sedentário": 1.2, "leve": 1.375, "moderado": 1.55, "alto": 1.725, "intenso": 1.725}
     tdee = bmr * fa.get((atividade or "leve").lower(), 1.375)
     objetivo = (objetivo or "manter").lower()
-    if "emag" in objetivo: tdee -= 300
-    if "ganho" in objetivo: tdee += 300
+    if "emag" in objetivo:
+        tdee -= 300
+    if "ganho" in objetivo:
+        tdee += 300
     return max(1200, int(round(tdee)))
+
 
 def payload_or(default, key):  # helperzinho para simulação
     return default
+
 
 def _mock_plan(user_data: Dict[str, Any]) -> Dict[str, Any]:
     random.seed(_seed_from_payload(user_data))
@@ -48,7 +68,7 @@ def _mock_plan(user_data: Dict[str, Any]) -> Dict[str, Any]:
                 meal("Lanche", ["Maçã 1un", "Castanhas 20g"], 0.10),
                 meal("Jantar", ["Omelete 2 ovos", "Legumes salteados", "Azeite 1 cchá"], 0.25),
             ],
-            "hydration": f"Meta diária: {max(1.5, round(peso*0.035,1))} L",
+            "hydration": f"Meta diária: {max(1.5, round(peso * 0.035, 1))} L",
             "fiber": "25–35 g/dia de fibras (verduras, legumes e frutas).",
             "substitutions": {
                 "Café da manhã": ["Pão integral 1f ↔ Aveia 30g", "Queijo branco 30g ↔ Iogurte 100g"],
@@ -69,17 +89,22 @@ def _mock_plan(user_data: Dict[str, Any]) -> Dict[str, Any]:
         "notes": ["Plano simulado (offline) para testes de UI."],
     }
 
+
 def _mock_insights(user_data: Dict[str, Any]) -> Dict[str, Any]:
     """Resumo de insights que o painel usa (sem IA)."""
+
     peso = float(user_data.get("peso") or 70)
     altura = float(user_data.get("altura") or 170)
     altura_m = altura / 100
     bmi = round(peso / (altura_m ** 2), 1)
     bmi_cat = (
-        "Baixo peso" if bmi < 18.5 else
-        "Eutrofia" if bmi < 25 else
-        "Sobrepeso" if bmi < 30 else
-        "Obesidade"
+        "Baixo peso"
+        if bmi < 18.5
+        else "Eutrofia"
+        if bmi < 25
+        else "Sobrepeso"
+        if bmi < 30
+        else "Obesidade"
     )
 
     consumo_agua_raw = user_data.get("consumo_agua")
@@ -140,9 +165,10 @@ def _mock_insights(user_data: Dict[str, Any]) -> Dict[str, Any]:
         "consumption": {"water_liters": consumo_agua, "recommended_liters": recomendado},
     }
 
+
 # ----------------- API pública -----------------
 def generate_plan(user_data: Dict[str, Any], model: str = "gpt-4o-mini") -> Dict[str, Any]:
-    if SIMULATE or OpenAI is None:
+    if _should_simulate() or OpenAI is None:
         return _mock_plan(user_data)
 
     client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -153,13 +179,15 @@ def generate_plan(user_data: Dict[str, Any], model: str = "gpt-4o-mini") -> Dict
     except Exception:
         return _mock_plan(user_data)
 
+
 def generate_insights(user_data: Dict[str, Any]) -> Dict[str, Any]:
     """
     Novo: fornece o pacote de insights para o painel.
     - No modo simulado, calcula localmente.
     - Se houver IA, você pode enriquecer com um resumo textual.
     """
-    if SIMULATE or OpenAI is None:
+
+    if _should_simulate() or OpenAI is None:
         ins = _mock_insights(user_data)
         return {
             "insights": ins,
