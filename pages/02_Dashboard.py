@@ -8,6 +8,7 @@ import logging
 import re
 import unicodedata
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, Iterable, Optional, Sequence, Tuple
 
 import streamlit as st
@@ -24,6 +25,7 @@ from modules.form.ui_insights import (
 )
 from modules.results_context import PILLAR_NAMES, ensure_pilares_scores
 from core.gerador_imagens import gerar_paginas_resultado
+from services.pdf_plan import gerar_pdf_plano
 
 log = logging.getLogger(__name__)
 
@@ -283,6 +285,16 @@ def _load_payment_status(pac_id: str) -> Dict[str, Any]:
     return payload
 
 
+def _get_payment_status(pac_id: str) -> Dict[str, Any]:
+    cached = st.session_state.get("payment_status")
+    if cached and cached.get("pac_id") == pac_id:
+        return cached
+
+    status = _load_payment_status(pac_id)
+    st.session_state.payment_status = status
+    return status
+
+
 def _create_payment_link(pac_id: str, valor: float) -> Dict[str, Any]:
     if not pac_id:
         return {"ok": False, "msg": "pac_id ausente."}
@@ -319,41 +331,120 @@ def _create_payment_link(pac_id: str, valor: float) -> Dict[str, Any]:
 
 
 
+def _safe_rerun() -> None:
+    try:  # Streamlit 1.32+
+        st.rerun()
+    except Exception:
+        st.experimental_rerun()
+
+
 def _render_payment_section(pac_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
-    st.markdown("## Pagamento")
-
-    st.session_state.setdefault("payment_status", None)
-    payment_status = st.session_state.get("payment_status")
-    if not payment_status or payment_status.get("pac_id") != pac_id:
-        payment_status = _load_payment_status(pac_id)
-        st.session_state.payment_status = payment_status
-
+    payment_status = _get_payment_status(pac_id)
     valor_base = _to_float(payload.get("plano_alimentar", {}).get("valor")) or 50.0
     status_norm = (payment_status.get("status_pagamento") or "pendente").strip().lower()
-    st.write(f"Status do pagamento: {status_norm.replace('_', ' ').title()}")
 
-    checkout_url = payment_status.get("checkout_url")
-    cols_actions = st.columns(2)
-    with cols_actions[0]:
-        if st.button("Ir para pagamento", type="primary", use_container_width=True):
-            result = _create_payment_link(pac_id, valor_base)
-            if result.get("ok"):
-                st.success(result.get("msg") or "Checkout criado com sucesso.")
-                payment_status = _load_payment_status(pac_id)
-                st.session_state.payment_status = payment_status
-                checkout_url = result.get("checkout_url") or payment_status.get("checkout_url")
-            else:
-                st.error(result.get("msg") or "Não foi possível gerar o link de pagamento.")
+    with st.expander("💳 Pagamento", expanded=True):
+        st.write(f"Status do pagamento: **{status_norm.replace('_', ' ').title()}**")
 
-        if checkout_url:
-            st.link_button("Abrir tela de pagamento", checkout_url, use_container_width=True)
+        checkout_url = payment_status.get("checkout_url")
+        cols_actions = st.columns(2)
+        with cols_actions[0]:
+            if st.button("Ir para pagamento", type="primary", use_container_width=True):
+                result = _create_payment_link(pac_id, valor_base)
+                if result.get("ok"):
+                    st.success(result.get("msg") or "Checkout criado com sucesso.")
+                    payment_status = _load_payment_status(pac_id)
+                    st.session_state.payment_status = payment_status
+                    checkout_url = result.get("checkout_url") or payment_status.get("checkout_url")
+                else:
+                    st.error(result.get("msg") or "Não foi possível gerar o link de pagamento.")
 
-    with cols_actions[1]:
-        if st.button("Gerar plano nutricional", type="primary", use_container_width=True):
-            st.session_state.plan_generation_triggered = True
-            st.success("Estamos preparando seu plano nutricional.")
+            if checkout_url:
+                st.link_button("Abrir tela de pagamento", checkout_url, use_container_width=True)
 
-    return payment_status
+        with cols_actions[1]:
+            st.warning("Botão de teste para ambiente de desenvolvimento. Não usar em produção.")
+            if st.button("TESTE: Aprovar pagamento (DEV)", use_container_width=True):
+                db_mod = _import_optional_module("services.db")
+                if db_mod and hasattr(db_mod, "update_payment_status"):
+                    try:
+                        ok = db_mod.update_payment_status(pac_id, "aprovado")
+                    except Exception as exc:  # pragma: no cover - defensivo
+                        log.exception("Erro ao atualizar status de pagamento: %s", exc)
+                        ok = False
+                    if ok:
+                        st.success("Status atualizado para aprovado.")
+                        st.session_state.payment_status = _load_payment_status(pac_id)
+                        _safe_rerun()
+                    else:
+                        st.error("Não foi possível atualizar o status de pagamento.")
+                else:
+                    st.error("Módulo de banco de dados indisponível para simular pagamento.")
+
+    return st.session_state.get("payment_status", payment_status)
+
+
+def _render_plan_section(
+    pac_id: Optional[str], respostas: Dict[str, Any], payment_status: Dict[str, Any]
+) -> None:
+    st.markdown("### Plano nutricional")
+    status_pagamento = (payment_status.get("status_pagamento") or "pendente").strip().lower()
+    pode_gerar_plano = status_pagamento in {"aprovado", "pago", "approved"}
+
+    if not pode_gerar_plano:
+        st.info("Para gerar o plano completo, finalize o pagamento e atualize o status.")
+
+    gerar_plano_click = st.button(
+        "Gerar plano nutricional",
+        key="btn_gerar_plano",
+        type="primary",
+        use_container_width=True,
+    )
+
+    if gerar_plano_click:
+        if not pode_gerar_plano:
+            st.warning("Pagamento pendente. Conclua o pagamento para liberar o plano.")
+        else:
+            with st.spinner("Gerando plano personalizado..."):
+                try:
+                    plan_data = openai_utils.generate_plan(respostas or {})
+                    st.session_state.plan = plan_data
+                    st.session_state.plan_generated_at = datetime.now(timezone.utc).isoformat()
+                except Exception as exc:  # pragma: no cover - fallback
+                    log.exception("Falha ao gerar plano: %s", exc)
+                    st.error("Não foi possível gerar o plano nutricional. Tente novamente.")
+                    plan_data = None
+
+                if plan_data:
+                    try:
+                        repo.save_plan_generation_result(
+                            pac_id or "-",
+                            plano_ia=plan_data,
+                            substituicoes=plan_data.get("diet", {}).get("substitutions", {}),
+                            cardapio_ia=plan_data.get("diet", {}),
+                            pdf_completo_url=None,
+                        )
+                    except Exception:  # pragma: no cover - persistência opcional
+                        log.exception("Falha ao salvar dados do plano.")
+
+                    try:
+                        pdf_path = gerar_pdf_plano(plan_data, pac_id or "paciente", respostas)
+                        st.session_state.plan_pdf_path = pdf_path
+                        st.success("Plano gerado com sucesso! Baixe o PDF abaixo.")
+                    except Exception as exc:  # pragma: no cover - fallback
+                        log.exception("Erro ao gerar PDF do plano: %s", exc)
+                        st.error("Geramos o plano, mas não foi possível criar o PDF.")
+
+    pdf_path = st.session_state.get("plan_pdf_path")
+    if pdf_path and Path(pdf_path).exists():
+        with open(pdf_path, "rb") as pdf_file:
+            st.download_button(
+                label="Baixar plano nutricional em PDF",
+                data=pdf_file,
+                file_name=f"plano_nutrisigno_{pac_id or 'paciente'}.pdf",
+                mime="application/pdf",
+                use_container_width=True,
+            )
 
 
 KCAL_TABLE = {
@@ -1052,6 +1143,16 @@ def _inject_style() -> None:
         .behavior-card li {{ margin:0; line-height:1.35; }}
         .behavior-card .card-cta {{ margin:4px 0 0 0; font-size:0.82rem; color:{PRIMARY}; font-weight:600; }}
         .behavior-card .card-note {{ margin:0; font-size:0.82rem; color:#4b4d6a; }}
+        .stButton > button, .stDownloadButton > button, .stLinkButton > button {{
+            background: #7C3AED !important;
+            color: #fff !important;
+            border-radius: 10px;
+            border: none;
+            box-shadow: 0 6px 14px rgba(124, 58, 237, 0.25);
+        }}
+        .stButton > button:hover, .stDownloadButton > button:hover, .stLinkButton > button:hover {{
+            background: #A855F7 !important;
+        }}
         </style>
         """,
         unsafe_allow_html=True,
@@ -1494,8 +1595,7 @@ def main() -> None:
 
     st.title("📊 Resultado NutriSigno")
     st.caption("Acompanhe métricas-chave e próximos passos do seu plano.")
-
-    payment_status = _render_payment_section(pac_id, payload)
+    payment_status = _get_payment_status(pac_id)
     if payment_status:
         payload["status_pagamento"] = payment_status.get("status_pagamento") or payload.get("status_pagamento")
         payload["checkout_url"] = payment_status.get("checkout_url")
@@ -1672,7 +1772,9 @@ def main() -> None:
     st.markdown("### Compartilhe seu resultado")
     share_available = bool(paginas.get("pagina1"))
     if share_available:
-        if st.button("Gerar imagem para Instagram", use_container_width=True):
+        if st.button(
+            "Gerar imagem para Instagram", use_container_width=True, type="primary"
+        ):
             st.session_state["show_share_modal"] = True
             st.session_state["pagina_atual_compartilhar"] = 0
 
@@ -1680,6 +1782,9 @@ def main() -> None:
             _render_share_modal(paginas, pac_id)
     else:
         st.info("Gerando sua imagem. Volte em instantes.")
+
+    _render_plan_section(pac_id, respostas, payment_status)
+    _render_payment_section(pac_id, payload)
 
 
 if __name__ == "__main__":
