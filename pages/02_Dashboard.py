@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import html
+import importlib
 import logging
 import re
 import unicodedata
@@ -237,9 +238,181 @@ def _resolve_status(payload: Dict[str, Any]) -> Dict[str, str]:
     plano = (payload.get("status_plano") or "").strip().lower()
     if plano == "erro":
         return {"state": "S3", "pagamento": pagamento or "pendente", "plano": plano or "erro"}
-    if pagamento == "pago" or plano in {"disponivel", "gerado"} or payload.get("plano_alimentar"):
+    if pagamento in {"pago", "aprovado", "approved"} or plano in {"disponivel", "gerado"} or payload.get("plano_alimentar"):
         return {"state": "S2", "pagamento": pagamento or "pago", "plano": plano or "disponivel"}
     return {"state": "S1", "pagamento": pagamento or "pendente", "plano": plano or "nao_gerado"}
+
+
+DEFAULT_PAYMENT_PAYLOAD: Dict[str, Any] = {
+    "pac_id": None,
+    "status_pagamento": "nao_encontrado",
+    "metodo": "Mercado Pago",
+    "valor": None,
+    "created_at": None,
+    "updated_at": None,
+    "preference_id": None,
+    "external_reference": None,
+    "checkout_url": None,
+}
+
+_STATUS_COLORS = {
+    "aprovado": SUCCESS,
+    "approved": SUCCESS,
+    "pago": SUCCESS,
+    "pendente": WARNING,
+    "em_analise": WARNING,
+    "recusado": CRITICAL,
+    "cancelado": CRITICAL,
+    "nao_encontrado": "#a0aec0",
+}
+
+
+def _import_optional_module(name: str) -> Any:
+    spec = importlib.util.find_spec(name)
+    if not spec:
+        return None
+    return importlib.import_module(name)
+
+
+def _load_payment_status(pac_id: str) -> Dict[str, Any]:
+    payload = {**DEFAULT_PAYMENT_PAYLOAD, "pac_id": pac_id}
+    if not pac_id:
+        return payload
+
+    db_mod = _import_optional_module("services.db")
+    if not db_mod or not hasattr(db_mod, "fetch_payment_by_pac_id"):
+        return payload
+
+    try:
+        db_payload = db_mod.fetch_payment_by_pac_id(pac_id)
+    except Exception as exc:  # pragma: no cover - defensivo
+        log.exception("Erro ao buscar status de pagamento: %s", exc)
+        return payload
+
+    if not db_payload:
+        return payload
+
+    payload.update({k: v for k, v in db_payload.items() if k in payload or k == "pac_id"})
+    return payload
+
+
+def _create_payment_link(pac_id: str, valor: float) -> Dict[str, Any]:
+    if not pac_id:
+        return {"ok": False, "msg": "pac_id ausente."}
+
+    payments_mod = _import_optional_module("services.payments")
+    db_mod = _import_optional_module("services.db")
+
+    result: Dict[str, Any] = {}
+    if payments_mod and hasattr(payments_mod, "create_checkout"):
+        try:
+            result = payments_mod.create_checkout(pac_id, valor)
+        except Exception as exc:  # pragma: no cover - defensivo
+            log.exception("Falha ao criar checkout: %s", exc)
+            result = {}
+
+    if not result:
+        return {"ok": False, "msg": "Não foi possível gerar o checkout."}
+
+    if db_mod and hasattr(db_mod, "persist_checkout_metadata"):
+        try:
+            db_mod.persist_checkout_metadata(
+                pac_id,
+                {
+                    "status_pagamento": "pendente",
+                    "preference_id": result.get("preference_id"),
+                    "valor": result.get("valor"),
+                    "checkout_url": result.get("checkout_url"),
+                },
+            )
+        except Exception as exc:  # pragma: no cover - defensivo
+            log.exception("Falha ao registrar metadados do checkout: %s", exc)
+
+    return result
+
+
+def _format_payment_datetime(dt: Any) -> str:
+    if not dt:
+        return "-"
+    if isinstance(dt, datetime):
+        return dt.isoformat(timespec="seconds")
+    return str(dt)
+
+
+def _payment_badge(status: str) -> str:
+    status_norm = (status or "-").strip().lower() or "nao_encontrado"
+    color = _STATUS_COLORS.get(status_norm, NEUTRAL)
+    label = status_norm.replace("_", " ")
+    return f"<span style='background:{color};color:white;padding:4px 10px;border-radius:999px;font-weight:700;font-size:0.85rem;text-transform:uppercase'>{html.escape(label)}</span>"
+
+
+def _render_payment_section(pac_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+    st.markdown("## Pagamento e liberação do plano")
+
+    st.session_state.setdefault("payment_status", None)
+    payment_status = st.session_state.get("payment_status")
+    if not payment_status or payment_status.get("pac_id") != pac_id:
+        payment_status = _load_payment_status(pac_id)
+        st.session_state.payment_status = payment_status
+
+    col_top = st.columns([2, 1])
+    with col_top[0]:
+        st.markdown(
+            f"Status do pagamento: {_payment_badge(payment_status.get('status_pagamento'))}",
+            unsafe_allow_html=True,
+        )
+        st.caption(f"pac_id: {pac_id}")
+    with col_top[1]:
+        if st.button("Atualizar status", type="secondary"):
+            payment_status = _load_payment_status(pac_id)
+            st.session_state.payment_status = payment_status
+
+    valor_base = _to_float(payload.get("plano_alimentar", {}).get("valor")) or 50.0
+    cols = st.columns(4)
+    cols[0].metric("Valor", f"R$ {valor_base:.2f}")
+    cols[1].metric("Método", payment_status.get("metodo") or "Mercado Pago")
+    cols[2].metric("Criado em", _format_payment_datetime(payment_status.get("created_at")))
+    cols[3].metric("Atualizado em", _format_payment_datetime(payment_status.get("updated_at")))
+
+    checkout_url = payment_status.get("checkout_url")
+    cols_actions = st.columns([1, 1, 2])
+    with cols_actions[0]:
+        if st.button("Ir para pagamento", type="primary"):
+            result = _create_payment_link(pac_id, valor_base)
+            if result.get("ok"):
+                st.success(result.get("msg") or "Checkout criado com sucesso.")
+                payment_status = _load_payment_status(pac_id)
+                st.session_state.payment_status = payment_status
+                checkout_url = result.get("checkout_url") or payment_status.get("checkout_url")
+            else:
+                st.error(result.get("msg") or "Não foi possível gerar o link de pagamento.")
+
+    with cols_actions[1]:
+        status_norm = (payment_status.get("status_pagamento") or "").strip().lower()
+        disabled = status_norm not in {"aprovado", "approved", "pago"}
+        if st.button("Gerar plano nutricional", type="primary", disabled=disabled):
+            st.session_state.plan_generation_triggered = True
+            st.success("Pagamento aprovado. Iniciando geração do plano nutricional.")
+        if disabled:
+            st.caption("Finalize o pagamento e atualize o status para liberar a geração do plano.")
+
+    with cols_actions[2]:
+        if checkout_url:
+            st.link_button("Abrir tela de pagamento", checkout_url, use_container_width=True)
+        else:
+            st.info("Clique em 'Ir para pagamento' para gerar o link.")
+
+    status_norm = (payment_status.get("status_pagamento") or "nao_encontrado").strip().lower()
+    if status_norm in {"pendente", "em_analise"}:
+        st.warning("Pagamento pendente ou em análise. Após concluir, clique em Atualizar status.")
+    elif status_norm in {"aprovado", "approved", "pago"}:
+        st.success("Pagamento aprovado! Você pode gerar o plano nutricional.")
+    elif status_norm in {"recusado", "cancelado"}:
+        st.error("Pagamento recusado ou cancelado. Gere um novo link e tente novamente.")
+    else:
+        st.info("Nenhum pagamento encontrado. Gere um link para iniciar.")
+
+    return payment_status
 
 
 KCAL_TABLE = {
@@ -1747,6 +1920,15 @@ def main() -> None:
 
     st.title("📊 Resultado NutriSigno")
     st.caption("Acompanhe métricas-chave e próximos passos do seu plano.")
+
+    payment_status = _render_payment_section(pac_id, payload)
+    if payment_status:
+        payload["status_pagamento"] = payment_status.get("status_pagamento") or payload.get("status_pagamento")
+        payload["checkout_url"] = payment_status.get("checkout_url")
+        payload["preference_id"] = payment_status.get("preference_id")
+        payload["external_reference"] = payment_status.get("external_reference")
+        if isinstance(payload.get("plano_alimentar"), dict) and payment_status.get("valor"):
+            payload["plano_alimentar"]["valor"] = payment_status.get("valor")
 
     insights, ai_summary = _prepare_insights(respostas)
 
