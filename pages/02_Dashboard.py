@@ -8,15 +8,12 @@ import logging
 import re
 import unicodedata
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any, Dict, Iterable, Optional, Sequence, Tuple
 
 import streamlit as st
 
-from agents import diet_loader, orchestrator, subs_loader
-from modules import app_bootstrap, openai_utils, pdf_generator_v2, repo
+from modules import app_bootstrap, openai_utils, repo
 from modules.client_state import get_user_cached, load_client_state, save_client_state
-from modules.form.exporters import build_insights_pdf_bytes
 from modules.form.ui_insights import (
     collect_comportamentos,
     element_icon,
@@ -255,16 +252,6 @@ DEFAULT_PAYMENT_PAYLOAD: Dict[str, Any] = {
     "checkout_url": None,
 }
 
-_STATUS_COLORS = {
-    "aprovado": SUCCESS,
-    "approved": SUCCESS,
-    "pago": SUCCESS,
-    "pendente": WARNING,
-    "em_analise": WARNING,
-    "recusado": CRITICAL,
-    "cancelado": CRITICAL,
-    "nao_encontrado": "#a0aec0",
-}
 
 
 def _import_optional_module(name: str) -> Any:
@@ -331,23 +318,9 @@ def _create_payment_link(pac_id: str, valor: float) -> Dict[str, Any]:
     return result
 
 
-def _format_payment_datetime(dt: Any) -> str:
-    if not dt:
-        return "-"
-    if isinstance(dt, datetime):
-        return dt.isoformat(timespec="seconds")
-    return str(dt)
-
-
-def _payment_badge(status: str) -> str:
-    status_norm = (status or "-").strip().lower() or "nao_encontrado"
-    color = _STATUS_COLORS.get(status_norm, NEUTRAL)
-    label = status_norm.replace("_", " ")
-    return f"<span style='background:{color};color:white;padding:4px 10px;border-radius:999px;font-weight:700;font-size:0.85rem;text-transform:uppercase'>{html.escape(label)}</span>"
-
 
 def _render_payment_section(pac_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
-    st.markdown("## Pagamento e liberação do plano")
+    st.markdown("## Pagamento")
 
     st.session_state.setdefault("payment_status", None)
     payment_status = st.session_state.get("payment_status")
@@ -355,29 +328,14 @@ def _render_payment_section(pac_id: str, payload: Dict[str, Any]) -> Dict[str, A
         payment_status = _load_payment_status(pac_id)
         st.session_state.payment_status = payment_status
 
-    col_top = st.columns([2, 1])
-    with col_top[0]:
-        st.markdown(
-            f"Status do pagamento: {_payment_badge(payment_status.get('status_pagamento'))}",
-            unsafe_allow_html=True,
-        )
-        st.caption(f"pac_id: {pac_id}")
-    with col_top[1]:
-        if st.button("Atualizar status", type="secondary"):
-            payment_status = _load_payment_status(pac_id)
-            st.session_state.payment_status = payment_status
-
     valor_base = _to_float(payload.get("plano_alimentar", {}).get("valor")) or 50.0
-    cols = st.columns(4)
-    cols[0].metric("Valor", f"R$ {valor_base:.2f}")
-    cols[1].metric("Método", payment_status.get("metodo") or "Mercado Pago")
-    cols[2].metric("Criado em", _format_payment_datetime(payment_status.get("created_at")))
-    cols[3].metric("Atualizado em", _format_payment_datetime(payment_status.get("updated_at")))
+    status_norm = (payment_status.get("status_pagamento") or "pendente").strip().lower()
+    st.write(f"Status do pagamento: {status_norm.replace('_', ' ').title()}")
 
     checkout_url = payment_status.get("checkout_url")
-    cols_actions = st.columns([1, 1, 2])
+    cols_actions = st.columns(2)
     with cols_actions[0]:
-        if st.button("Ir para pagamento", type="primary"):
+        if st.button("Ir para pagamento", type="primary", use_container_width=True):
             result = _create_payment_link(pac_id, valor_base)
             if result.get("ok"):
                 st.success(result.get("msg") or "Checkout criado com sucesso.")
@@ -387,30 +345,13 @@ def _render_payment_section(pac_id: str, payload: Dict[str, Any]) -> Dict[str, A
             else:
                 st.error(result.get("msg") or "Não foi possível gerar o link de pagamento.")
 
-    with cols_actions[1]:
-        status_norm = (payment_status.get("status_pagamento") or "").strip().lower()
-        disabled = status_norm not in {"aprovado", "approved", "pago"}
-        if st.button("Gerar plano nutricional", type="primary", disabled=disabled):
-            st.session_state.plan_generation_triggered = True
-            st.success("Pagamento aprovado. Iniciando geração do plano nutricional.")
-        if disabled:
-            st.caption("Finalize o pagamento e atualize o status para liberar a geração do plano.")
-
-    with cols_actions[2]:
         if checkout_url:
             st.link_button("Abrir tela de pagamento", checkout_url, use_container_width=True)
-        else:
-            st.info("Clique em 'Ir para pagamento' para gerar o link.")
 
-    status_norm = (payment_status.get("status_pagamento") or "nao_encontrado").strip().lower()
-    if status_norm in {"pendente", "em_analise"}:
-        st.warning("Pagamento pendente ou em análise. Após concluir, clique em Atualizar status.")
-    elif status_norm in {"aprovado", "approved", "pago"}:
-        st.success("Pagamento aprovado! Você pode gerar o plano nutricional.")
-    elif status_norm in {"recusado", "cancelado"}:
-        st.error("Pagamento recusado ou cancelado. Gere um novo link e tente novamente.")
-    else:
-        st.info("Nenhum pagamento encontrado. Gere um link para iniciar.")
+    with cols_actions[1]:
+        if st.button("Gerar plano nutricional", type="primary", use_container_width=True):
+            st.session_state.plan_generation_triggered = True
+            st.success("Estamos preparando seu plano nutricional.")
 
     return payment_status
 
@@ -1489,115 +1430,7 @@ def _render_share_modal(paginas: Dict[str, bytes], pac_id: str) -> None:
         )
 
 
-def _render_actions(
-    state: str,
-    pac_id: str,
-    insights: Dict[str, Any],
-    payload: Dict[str, Any],
-    pdf_bytes: bytes,
-    paginas: Dict[str, bytes],
-    behavior_bytes: bytes | None = None,
-) -> None:
-    # Espaço vertical antes do bloco de ações
-    st.markdown("<div style='margin-top: 24px;'></div>", unsafe_allow_html=True)
 
-    share_available = bool(paginas.get("pagina1"))
-    if not share_available:
-        st.session_state["show_share_modal"] = False
-    st.session_state.setdefault("show_share_modal", False)
-    st.session_state.setdefault("pagina_atual_compartilhar", 0)
-
-    if state == "S1":
-        cols = st.columns(4 if behavior_bytes else 3, gap="medium")
-        payment_url = payload.get("payment_url") or payload.get("checkout_url")
-
-        with cols[0]:
-            if payment_url:
-                st.link_button("Liberar Plano Completo", payment_url, type="primary")
-            else:
-                if st.button("Liberar Plano Completo", type="primary"):
-                    _redirect_to_form(pac_id)
-
-        with cols[1]:
-            st.download_button(
-                "PDF Resumo",
-                data=pdf_bytes,
-                file_name=f"nutrisigno_{pac_id[:8]}_resumo.pdf",
-                mime="application/pdf",
-                use_container_width=True,
-            )
-
-        with cols[2]:
-            if share_available:
-                if st.button("Compartilhar resultado", use_container_width=True):
-                    st.session_state["show_share_modal"] = True
-                    st.session_state["pagina_atual_compartilhar"] = 0
-            else:
-                st.warning("Não foi possível gerar o pacote de compartilhamento.")
-
-        if behavior_bytes:
-            with cols[3]:
-                st.download_button(
-                    "Perfil comportamental",
-                    data=behavior_bytes,
-                    file_name=f"nutrisigno_{pac_id[:8]}_comportamental.png",
-                    mime="image/png",
-                    use_container_width=True,
-                )
-
-        # Espaço depois do bloco (não colar no texto/alerta seguinte)
-        st.markdown("<div style='margin-bottom: 24px;'></div>", unsafe_allow_html=True)
-        if st.session_state.get("show_share_modal") and share_available:
-            _render_share_modal(paginas, pac_id)
-        return
-
-    # Estado com plano IA disponível
-    cols = st.columns(5 if behavior_bytes else 4, gap="medium")
-
-    with cols[0]:
-        if st.button("Plano IA", type="primary"):
-            st.toast("Confira a aba 'Cardápio base' logo abaixo.")
-
-    with cols[1]:
-        if st.button("Substituições ±2%"):
-            st.toast("Veja a aba de substituições para trocas inteligentes.")
-
-    with cols[2]:
-        pdf_completo = payload.get("pdf_completo_url") or payload.get("pdf_url_completo")
-        if pdf_completo:
-            st.link_button("PDF Completo", pdf_completo)
-        else:
-            st.download_button(
-                "PDF Completo (resumo)",
-                data=pdf_bytes,
-                file_name=f"nutrisigno_{pac_id[:8]}_completo.pdf",
-                mime="application/pdf",
-                use_container_width=True,
-            )
-
-    with cols[3]:
-        if share_available:
-            if st.button("Compartilhar resultado", use_container_width=True):
-                st.session_state["show_share_modal"] = True
-                st.session_state["pagina_atual_compartilhar"] = 0
-        else:
-            st.warning("Não foi possível gerar o pacote de compartilhamento.")
-
-    if behavior_bytes:
-        with cols[4]:
-            st.download_button(
-                "Perfil comportamental",
-                data=behavior_bytes,
-                file_name=f"nutrisigno_{pac_id[:8]}_comportamental.png",
-                mime="image/png",
-                use_container_width=True,
-            )
-
-    # Espaço depois do bloco de ações (versão paga)
-    if st.session_state.get("show_share_modal") and share_available:
-        _render_share_modal(paginas, pac_id)
-
-    st.markdown("<div style='margin-bottom: 24px;'></div>", unsafe_allow_html=True)
 
 
 def _redirect_to_form(pac_id: str) -> None:
@@ -1616,265 +1449,6 @@ def _redirect_to_form(pac_id: str) -> None:
             st.stop()
 
 
-def _render_plan_sections(state: str, payload: Dict[str, Any]) -> None:
-    if state == "S1":
-        st.info("Plano completo será liberado automaticamente após confirmação do pagamento.")
-        return
-    if state == "S3":
-        st.error("Não conseguimos gerar o Plano completo automaticamente neste momento.")
-        st.warning("Erro técnico. Nossa equipe já foi notificada; tente novamente mais tarde.")
-        return
-
-    st.markdown("### Plano NutriSigno pós-pagamento")
-
-    plano_ia = payload.get("plano_ia") or {}
-    substituicoes = payload.get("substituicoes") or {}
-    combos = payload.get("cardapio_ia") or {}
-    pdf_completo = payload.get("pdf_completo_url")
-
-    cols = st.columns(3, gap="large")
-
-    with cols[0]:
-        kcal_alvo = plano_ia.get("kcal_alvo")
-        kcal_pdf = plano_ia.get("kcal")
-        arquivo = Path(str(plano_ia.get("arquivo") or "")).name or "—"
-        st.markdown(
-            f"""
-            <div class='card'>
-              <div class='card-title'>Seu Plano Alimentar</div>
-              <p class='sub'>Base PDF selecionada</p>
-              <div class='kpi'>{kcal_pdf or '—'} kcal</div>
-              <p class='sub'>Alvo calculado: {kcal_alvo or '—'} kcal/dia</p>
-              <p class='sub'>Arquivo base: {arquivo}</p>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-        if pdf_completo:
-            st.link_button("Baixar PDF consolidado", pdf_completo, use_container_width=True)
-        else:
-            st.caption("PDF consolidado será disponibilizado ao concluir o processamento.")
-
-    with cols[1]:
-        categorias = substituicoes.get("categorias") or []
-        if categorias:
-            resumo = "<br/>".join(
-                f"{html.escape(cat['categoria'])} · {len(cat.get('itens', []))} itens"
-                for cat in categorias[:4]
-            )
-        else:
-            resumo = "Nenhuma categoria vinculada."
-        st.markdown(
-            f"""
-            <div class='card'>
-              <div class='card-title'>Substituições vinculadas</div>
-              <p class='sub'>{resumo}</p>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-        if categorias:
-            with st.expander("Ver tabela completa"):
-                for categoria in categorias:
-                    st.markdown(f"**{categoria['categoria']}** — {categoria.get('descricao','')}")
-                    refeicoes = categoria.get("refeicoes") or []
-                    if refeicoes:
-                        st.markdown(
-                            ", ".join(
-                                f"{item['refeicao']}: {item['porcao']}" for item in refeicoes
-                            )
-                        )
-                    for item in categoria.get("itens", []):
-                        detalhe = f" ({item['porcao']})" if item.get("porcao") else ""
-                        st.markdown(f"- {item['nome']}{detalhe}")
-        else:
-            st.caption("Substituições serão preenchidas após o processamento completo.")
-
-    with cols[2]:
-        combos_list = combos.get("combos") or []
-        timestamp = combos.get("timestamp")
-        versao = combos.get("versao")
-        st.markdown(
-            f"""
-            <div class='card'>
-              <div class='card-title'>Sugestões IA</div>
-              <p class='sub'>Versão {versao or '—'} · {timestamp or '—'}</p>
-            </div>
-            """,
-            unsafe_allow_html=True,
-        )
-        if combos_list:
-            for combo in combos_list:
-                refeicao = combo.get("refeicao", "—").capitalize()
-                texto = combo.get("combo", "")
-                st.markdown(f"**{refeicao}:** {texto}")
-        else:
-            st.caption("Sugestões ainda não disponíveis. Assim que processadas, aparecerão aqui.")
-
-
-# ---------------------------------------------------------------------------
-# Ferramentas de diagnóstico (modo desenvolvedor)
-# ---------------------------------------------------------------------------
-
-
-def _dev_test_user_data() -> Dict[str, Any]:
-    """Retorna um conjunto fixo de dados para o teste do pipeline."""
-
-    return {
-        "nome": "Paciente Teste Pipeline",
-        "email": "pipeline.dev@nutrisigno.dev",
-        "telefone": "+55 (11) 90000-0000",
-        "data_nascimento": "01/01/1990",
-        "sexo": "Feminino",
-        "idade": 32,
-        "altura_cm": 165,
-        "peso_kg": 62,
-        "nivel_atividade": "Moderado",
-        "objetivo": "Manutenção",
-        "restricoes": "",
-    }
-
-
-def _validate_pre_plan(pre_plan: Dict[str, Any]) -> Dict[str, Any]:
-    macros = pre_plan.get("macros") or {}
-    kcal = macros.get("kcal")
-    if kcal is None:
-        raise ValueError("Pré-plano sem meta calórica definida.")
-
-    kcal_int = int(kcal)
-    if not 1000 <= kcal_int <= 3500:
-        raise ValueError("Meta calórica fora do intervalo esperado (1000–2000).")
-
-    porcoes = pre_plan.get("porcoes_por_refeicao") or {}
-    if not porcoes:
-        raise ValueError("Pré-plano não contém porções por refeição.")
-
-    status = pre_plan.get("status")
-    if status != "aguardando_pagamento":
-        raise ValueError(f"Status inesperado do pré-plano: {status}")
-
-    sample_meal = next(iter(porcoes.items()))
-
-    return {
-        "kcal": kcal_int,
-        "dieta_pdf_kcal": pre_plan.get("dieta_pdf_kcal"),
-        "porcoes_por_refeicao": porcoes,
-        "sample_meal": sample_meal,
-        "status": status,
-    }
-
-
-def _run_dev_pipeline_test() -> Dict[str, Any]:
-    ok_bootstrap, bootstrap_msg = app_bootstrap.ensure_bootstrap()
-    if not ok_bootstrap:
-        raise RuntimeError(f"Bootstrap falhou: {bootstrap_msg}")
-
-    dados_usuario = _dev_test_user_data()
-
-    diets_raw = diet_loader.load_diets()
-    subs_raw = subs_loader.load_substitutions()
-
-    pre_plan = orchestrator.gerar_plano_pre_pagamento(dados_usuario)
-    validation = _validate_pre_plan(pre_plan)
-
-    plano_compacto = {
-        "pre_plano": {
-            "dieta_pdf_kcal": pre_plan.get("dieta_pdf_kcal"),
-            "status": pre_plan.get("status"),
-        },
-        "porcoes_por_refeicao": pre_plan.get("porcoes_por_refeicao"),
-    }
-
-    pac_id = repo.upsert_patient_payload(
-        pac_id=None,
-        respostas=dados_usuario,
-        plano=pre_plan,
-        plano_compacto=plano_compacto,
-        macros=pre_plan.get("macros") or {},
-        name=dados_usuario.get("nome"),
-        email=dados_usuario.get("email"),
-    )
-
-    saved_payload = repo.get_by_pac_id(pac_id) if pac_id else None
-    if not saved_payload:
-        raise RuntimeError("Pré-plano salvo não foi encontrado no banco.")
-
-    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    pdf_path = Path("outputs") / f"test_pipeline_{timestamp}.pdf"
-    pdf_path_str = pdf_generator_v2.generate_pre_payment_pdf(
-        saved_payload,
-        pdf_path,
-        incluir_cardapio=False,
-    )
-
-    return {
-        "bootstrap_msg": bootstrap_msg,
-        "diets_count": len(diets_raw.get("dietas", [])) if isinstance(diets_raw, dict) else 0,
-        "subs_count": len(subs_raw.get("categorias", {})) if isinstance(subs_raw, dict) else 0,
-        "pre_plan": pre_plan,
-        "validation": validation,
-        "pac_id": pac_id,
-        "saved_payload": saved_payload,
-        "pdf_path": pdf_path_str,
-    }
-
-
-def _render_dev_pipeline_tester() -> None:
-    st.session_state.setdefault("dev_pipeline_result", None)
-
-    dev_mode = st.checkbox("Ativar modo desenvolvedor", value=False)
-    if not dev_mode:
-        return
-
-    with st.expander("🔧 Teste de Pipeline NutriSigno"):
-        st.caption(
-            "Ferramenta de diagnóstico interno. Executa o pipeline determinístico de pré-pagamento "
-            "para validar loaders, orquestrador, repositório e PDF sem alterar a experiência do usuário."
-        )
-
-        if st.button("🔍 Testar pipeline de plano alimentar (dev)", type="secondary"):
-            with st.spinner("Validando pipeline pré-pagamento..."):
-                try:
-                    st.session_state.dev_pipeline_result = _run_dev_pipeline_test()
-                    st.success("Pipeline executado com sucesso.")
-                except Exception as exc:  # pragma: no cover - ferramenta de debug
-                    log.exception("Falha ao testar pipeline de diagnóstico")
-                    st.session_state.dev_pipeline_result = None
-                    st.error(f"Falha ao testar o pipeline: {exc}")
-
-        result = st.session_state.get("dev_pipeline_result")
-        if not result:
-            st.info("Clique no botão acima para rodar o teste de ponta a ponta.")
-            return
-
-        validation = result.get("validation", {})
-        sample_meal = validation.get("sample_meal") or ("—", {})
-
-        success_items = [
-            f"✅ JSONs carregados com sucesso ({result.get('diets_count', 0)} dietas, {result.get('subs_count', 0)} categorias)",
-            f"✅ Orquestrador retornou plano com {validation.get('kcal')} kcal (dieta base {validation.get('dieta_pdf_kcal')} kcal)",
-            f"✅ Pré-plano salvo no banco, pac_id = {result.get('pac_id')}",
-            f"✅ PDF gerado em: {result.get('pdf_path')}",
-        ]
-        st.markdown("\n".join(f"- {item}" for item in success_items))
-
-        st.write("**Kcal alvo:**", validation.get("kcal"))
-        st.write(f"**Status:** {validation.get('status')} · **Kcal PDF:** {validation.get('dieta_pdf_kcal')}")
-
-        refeicao, itens = sample_meal
-        st.markdown(f"**Exemplo de refeição:** {refeicao}")
-        st.json(itens)
-
-        pdf_path = result.get("pdf_path")
-        if pdf_path and Path(pdf_path).exists():
-            pdf_bytes = Path(pdf_path).read_bytes()
-            st.download_button(
-                "Baixar PDF de teste",
-                data=pdf_bytes,
-                file_name=Path(pdf_path).name,
-                mime="application/pdf",
-            )
-            st.caption(f"Arquivo gerado em: {pdf_path}")
 
 # ---------------------------------------------------------------------------
 # Função principal
@@ -1930,7 +1504,7 @@ def main() -> None:
         if isinstance(payload.get("plano_alimentar"), dict) and payment_status.get("valor"):
             payload["plano_alimentar"]["valor"] = payment_status.get("valor")
 
-    insights, ai_summary = _prepare_insights(respostas)
+    insights, _ = _prepare_insights(respostas)
 
     state_info = _resolve_status(payload)
     _render_header(state_info, pac_id, payload)
@@ -2039,7 +1613,6 @@ def main() -> None:
     ]
     _render_interpretations(interpretations)
 
-    pdf_bytes = build_insights_pdf_bytes(insights)
     share_payload = _build_share_payload(respostas, insights, pilares_scores, bmi, score)
 
     payload_nutricional = {
@@ -2096,18 +1669,17 @@ def main() -> None:
         log.exception("Erro inesperado ao gerar páginas de resultado.")
         paginas = {}
 
-    behavior_bytes = paginas.get("pagina2")
-    _render_actions(state_info["state"], pac_id, insights, payload, pdf_bytes, paginas, behavior_bytes)
+    st.markdown("### Compartilhe seu resultado")
+    share_available = bool(paginas.get("pagina1"))
+    if share_available:
+        if st.button("Gerar imagem para Instagram", use_container_width=True):
+            st.session_state["show_share_modal"] = True
+            st.session_state["pagina_atual_compartilhar"] = 0
 
-    if state_info["state"] != "S1" and ai_summary:
-        with st.expander("Resumo IA (educativo)"):
-            st.write(ai_summary)
-
-    _render_plan_sections(state_info["state"], payload)
-
-    _render_dev_pipeline_tester()
-
-    st.caption("Compartilhe apenas com pessoas de confiança. NutriSigno é um apoio educativo, não substitui acompanhamento clínico.")
+        if st.session_state.get("show_share_modal"):
+            _render_share_modal(paginas, pac_id)
+    else:
+        st.info("Gerando sua imagem. Volte em instantes.")
 
 
 if __name__ == "__main__":
