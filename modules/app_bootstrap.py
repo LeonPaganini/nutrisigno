@@ -17,6 +17,10 @@ _BOOTSTRAP_MSG: str | None = None
 def init_models_and_migrate() -> None:
     """Inicializa os modelos e aplica migrações idempotentes."""
 
+    # Importa modelos que participam do metadata antes do create_all
+    import modules.repo  # noqa: F401  # pylint: disable=unused-import
+    import modules.leads  # noqa: F401  # pylint: disable=unused-import
+
     # Cria tabelas que ainda não existem
     Base.metadata.create_all(bind=engine)
 
