@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import math
 import tempfile
 from pathlib import Path
@@ -11,6 +12,9 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfgen import canvas
+
+
+logger = logging.getLogger(__name__)
 
 
 # Paleta NutriSigno
@@ -452,7 +456,15 @@ def _draw_graphs_page(
         angle = -math.pi / 2 + idx * angle_step
         point = (center_x + radius * value * math.cos(angle), center_y + radius * value * math.sin(angle))
         plotted.append((label, point, angle))
-    c.polygon([p for _, p, _ in plotted], stroke=0, fill=1)
+    polygon_points = [p for _, p, _ in plotted]
+    if polygon_points:
+        path = c.beginPath()
+        first_x, first_y = polygon_points[0]
+        path.moveTo(first_x, first_y)
+        for x, y in polygon_points[1:]:
+            path.lineTo(x, y)
+        path.close()
+        c.drawPath(path, stroke=0, fill=1)
     c.setFillColor(GOLD)
     for label, point, angle in plotted:
         c.circle(*point, GRID * 0.8, stroke=0, fill=1)
@@ -584,7 +596,12 @@ def gerar_pdf_plano(plan_data: Dict[str, Any], pac_id: str, paciente_info: Optio
     _draw_profile_page(c, width, height, paciente_info, plan_data)
     _draw_plan_page(c, width, height, meals, total_kcal)
     _draw_substitutions_page(c, width, height, substitutions)
-    _draw_graphs_page(c, width, height, meals, hydration)
+    try:
+        _draw_graphs_page(c, width, height, meals, hydration)
+    except Exception:
+        logger.exception(
+            "Falha ao desenhar a página de gráficos no PDF, seguindo sem esta página."
+        )
     _draw_conclusion_page(c, width, height, paciente_info, notes or [])
 
     c.save()
