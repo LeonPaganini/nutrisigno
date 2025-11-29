@@ -28,6 +28,8 @@ COLOR_GRADIENT_TOP = "#9F88C9"
 COLOR_GRADIENT_BOTTOM = "#5C488F"
 COLOR_GOLD_PRIMARY = "#D4B86A"
 COLOR_GOLD_SOFT = "#F0DCA2"
+COLOR_GOLD_PRIMARY_RGB = ImageColor.getrgb(COLOR_GOLD_PRIMARY)
+COLOR_GOLD_SOFT_RGB = ImageColor.getrgb(COLOR_GOLD_SOFT)
 COLOR_TEXT_PRIMARY = (255, 255, 255, 245)
 COLOR_TEXT_SECONDARY = (234, 226, 248, 210)
 _FONT_CACHE: Dict[Tuple[int, str], ImageFont.FreeTypeFont] = {}
@@ -179,9 +181,11 @@ def _draw_constellation(draw: ImageDraw.ImageDraw) -> None:
         x = random.randint(MARGIN_OUTER, WIDTH - MARGIN_OUTER)
         y = random.randint(MARGIN_OUTER + 40, int(HEIGHT * 0.55))
         points.append((x, y))
-        draw.ellipse((x - 3, y - 3, x + 3, y + 3), fill=COLOR_GOLD_PRIMARY + (160,))
+        fill_color = COLOR_GOLD_PRIMARY_RGB + (160,)
+        draw.ellipse((x - 3, y - 3, x + 3, y + 3), fill=fill_color)
     for i in range(len(points) - 1):
-        draw.line((points[i], points[i + 1]), fill=COLOR_GOLD_SOFT + (160,), width=2)
+        line_color = COLOR_GOLD_SOFT_RGB + (160,)
+        draw.line((points[i], points[i + 1]), fill=line_color, width=2)
 
 
 def _draw_logo_with_glow(canvas: Image.Image, position: Tuple[int, int], max_width: int) -> int:
@@ -297,6 +301,8 @@ def gerar_card_comportamental(payload_comportamental: dict) -> bytes:
     """Gera a imagem comportamental em memória."""
 
     canvas = _create_vertical_gradient()
+    if canvas.mode != "RGBA":
+        canvas = canvas.convert("RGBA")
     draw = ImageDraw.Draw(canvas)
 
     _draw_constellation(draw)
