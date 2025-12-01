@@ -350,21 +350,37 @@ def _draw_profile_page(
     c.showPage()
 
 
-def _ensure_space(c: canvas.Canvas, width: float, height: float, current_y: float, needed: float, seed: float) -> float:
+def _ensure_space(
+    c: canvas.Canvas,
+    width: float,
+    height: float,
+    current_y: float,
+    needed: float,
+    seed: float,
+    restart_section: Optional[str] = None,
+) -> float:
+    """Garante espaço útil; redesenha fundo e título ao quebrar a página."""
+
     if current_y - needed < MARGIN:
         c.showPage()
         _draw_background(c, width, height, seed=seed)
+        if restart_section:
+            title = restart_section
+            start_y = height - MARGIN
+            start_y = _draw_page_title(c, title, MARGIN, start_y)
+            return start_y
         return height - MARGIN
     return current_y
 
 
 def _draw_plan_page(c: canvas.Canvas, width: float, height: float, meals: List[Dict[str, Any]], total_kcal: Optional[Any]) -> None:
-    _draw_background(c, width, height, seed=3.3)
-    safe_x = MARGIN
-    y = height - MARGIN
     title = "Plano alimentar"
     if total_kcal:
         title = f"Plano alimentar · {total_kcal} kcal"
+
+    _draw_background(c, width, height, seed=3.3)
+    safe_x = MARGIN
+    y = height - MARGIN
     y = _draw_page_title(c, title, safe_x, y)
 
     col_width = (width - 2 * MARGIN - GRID) / 2
@@ -385,7 +401,15 @@ def _draw_plan_page(c: canvas.Canvas, width: float, height: float, meals: List[D
         col = idx % 2
         if idx and col == 0:
             card_y -= card_height + GRID
-        card_y = _ensure_space(c, width, height, card_y, card_height, seed=3.5 + idx)
+        card_y = _ensure_space(
+            c,
+            width,
+            height,
+            card_y,
+            card_height,
+            seed=3.5 + idx,
+            restart_section=title,
+        )
         x = safe_x + col * (col_width + GRID)
 
         _draw_card(c, x, card_y - card_height, col_width, card_height)
@@ -422,33 +446,45 @@ def _draw_plan_page(c: canvas.Canvas, width: float, height: float, meals: List[D
 
 
 def _draw_substitutions_page(c: canvas.Canvas, width: float, height: float, substitutions: Dict[str, Any]) -> None:
-    _draw_background(c, width, height, seed=4.4)
+    title = "Substituições inteligentes"
     safe_x = MARGIN
-    y = height - MARGIN
-    y = _draw_page_title(c, "Substituições inteligentes", safe_x, y)
 
-    table_height = height - 2 * MARGIN
-    _draw_card(c, safe_x, MARGIN, width - 2 * MARGIN, table_height)
-    inner_x = safe_x + GRID * 2
-    inner_y = y - GRID
-    col_meal = (width - 2 * MARGIN) * 0.22
-    col_food = (width - 2 * MARGIN) * 0.24
-    col_equiv = (width - 2 * MARGIN) - col_meal - col_food - GRID * 2
+    def _start_table_page(seed: float) -> Tuple[float, float, float, float, float]:
+        _draw_background(c, width, height, seed=seed)
+        y_top = height - MARGIN
+        y_top = _draw_page_title(c, title, safe_x, y_top)
+        table_h = height - 2 * MARGIN
+        _draw_card(c, safe_x, MARGIN, width - 2 * MARGIN, table_h)
 
-    c.setFont(SANS_BOLD, FONT_SIZES["body"])
-    c.setFillColor(DOURADO_MISTICO)
-    c.drawString(inner_x, inner_y, "Refeição")
-    c.drawString(inner_x + col_meal + GRID, inner_y, "Alimento")
-    c.drawString(inner_x + col_meal + col_food + GRID * 2, inner_y, "Equivalentes")
-    inner_y -= FONT_SIZES["body"] + GRID
+        inner_start_x = safe_x + GRID * 2
+        header_y = y_top - GRID
+        col_meal_local = (width - 2 * MARGIN) * 0.22
+        col_food_local = (width - 2 * MARGIN) * 0.24
+        col_equiv_local = (width - 2 * MARGIN) - col_meal_local - col_food_local - GRID * 2
 
+        c.setFont(SANS_BOLD, FONT_SIZES["body"])
+        c.setFillColor(DOURADO_MISTICO)
+        c.drawString(inner_start_x, header_y, "Refeição")
+        c.drawString(inner_start_x + col_meal_local + GRID, header_y, "Alimento")
+        c.drawString(inner_start_x + col_meal_local + col_food_local + GRID * 2, header_y, "Equivalentes")
+
+        return (
+            inner_start_x,
+            header_y - FONT_SIZES["body"] - GRID,
+            col_meal_local,
+            col_food_local,
+            col_equiv_local,
+        )
+
+    inner_x, inner_y, col_meal, col_food, col_equiv = _start_table_page(seed=4.4)
     diet_subs = substitutions or {}
+
     if not diet_subs:
         c.setFont(SANS_FONT, FONT_SIZES["body"])
         c.setFillColor(ROXO_ASTRAL)
         c.drawString(inner_x, inner_y, "Nenhuma substituição informada.")
     else:
-        for meal, options in list(diet_subs.items()):
+        for idx, (meal, options) in enumerate(list(diet_subs.items())):
             meal_lines = _wrap_text(str(meal), col_meal, SANS_BOLD, FONT_SIZES["small"])
             if isinstance(options, dict):
                 items = [f"{k}: {v}" for k, v in options.items()]
@@ -462,7 +498,10 @@ def _draw_substitutions_page(c: canvas.Canvas, width: float, height: float, subs
             equiv_lines = _wrap_text(equivalents, col_equiv, SANS_FONT, FONT_SIZES["small"])
             line_count = max(len(meal_lines), len(original_lines), len(equiv_lines), 1)
             row_height = line_count * (FONT_SIZES["small"] + GRID * 0.35) + GRID
-            inner_y = _ensure_space(c, width, height, inner_y, row_height, seed=4.6)
+
+            if inner_y - row_height < MARGIN + GRID * 2:
+                inner_x, inner_y, col_meal, col_food, col_equiv = _start_table_page(seed=4.5 + idx * 0.1)
+
             _draw_card(c, safe_x + GRID, inner_y - row_height + GRID * 0.4, width - 2 * MARGIN - GRID * 2, row_height)
 
             c.setFont(SANS_BOLD, FONT_SIZES["small"])
@@ -485,9 +524,16 @@ def _draw_substitutions_page(c: canvas.Canvas, width: float, height: float, subs
                 c.drawString(inner_x + col_meal + col_food + GRID * 3, y_line, line)
                 y_line -= FONT_SIZES["small"] + GRID * 0.35
 
+            inner_y -= row_height + GRID * 0.5
+
+    note_y = max(MARGIN + GRID * 1.5, inner_y - GRID)
+    if note_y < MARGIN + FONT_SIZES["small"] + GRID:
+        inner_x, inner_y, col_meal, col_food, col_equiv = _start_table_page(seed=5.1)
+        note_y = MARGIN + GRID * 1.5
+
     c.setFont(SANS_FONT, FONT_SIZES["small"])
     c.setFillColor(CINZA_VIOLETA)
-    c.drawString(inner_x, MARGIN - GRID * 0.5, "Observação: use as equivalências para variar mantendo o valor nutricional.")
+    c.drawString(inner_x, note_y, "Observação: use as equivalências para variar mantendo o valor nutricional.")
     c.showPage()
 
 
