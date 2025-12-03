@@ -34,6 +34,7 @@ except ImportError:  # pragma: no cover - ambiente sem selenium
     EC = None  # type: ignore[assignment]
     WebDriverWait = None  # type: ignore[assignment]
     HAS_SELENIUM = False
+    LOGGER.info("Selenium não está instalado; modo legado permanecerá desativado.")
 
 
 def _get_env(var: str) -> str:
@@ -117,6 +118,10 @@ def publish_post_selenium(post: dict[str, Any], driver, config: AppConfig) -> No
 
 def publish_due_posts_via_selenium(config: Optional[AppConfig] = None) -> None:
     """Mantém o fluxo legado via Selenium, protegido por import opcional."""
+
+    if not HAS_SELENIUM:
+        LOGGER.warning("Publicação via Selenium solicitada, mas Selenium não está disponível.")
+        raise ImportError("Selenium não está instalado neste ambiente. O modo legado está desativado.")
 
     cfg = config or load_config()
     due_posts = get_posts_due(datetime.now().isoformat(), config=cfg)
