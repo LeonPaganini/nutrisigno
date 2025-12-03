@@ -445,6 +445,9 @@ def _render_plan_section(
                 mime="application/pdf",
                 use_container_width=True,
             )
+    elif pdf_path:
+        st.info("O PDF anterior não está mais disponível. Gere um novo plano para habilitar o download.")
+        st.session_state.pop("plan_pdf_path", None)
 
 
 KCAL_TABLE = {

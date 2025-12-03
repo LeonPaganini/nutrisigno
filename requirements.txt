@@ -13,3 +13,4 @@ Pillow
 reportlab
 plotly
 pypdf==4.3.1
+requests>=2.32.0
