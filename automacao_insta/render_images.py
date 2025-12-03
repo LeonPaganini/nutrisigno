@@ -16,10 +16,14 @@ LOGGER = logging.getLogger(__name__)
 
 
 def _load_font(fonts_dir: Path, font_name: str, size: int) -> ImageFont.FreeTypeFont:
-    font_path = fonts_dir / font_name
-    if font_path.exists():
-        return ImageFont.truetype(str(font_path), size)
-    LOGGER.warning("Font %s not found, using default", font_path)
+    """Tenta carregar a fonte customizada com fallback seguro."""
+
+    candidates = [fonts_dir / font_name, Path(__file__).resolve().parent / "assets" / "fonts" / font_name]
+    for font_path in candidates:
+        if font_path.exists():
+            return ImageFont.truetype(str(font_path), size)
+
+    LOGGER.warning("Font %s not found in %s, using default", font_name, candidates)
     return ImageFont.load_default()
 
 
@@ -54,12 +58,37 @@ def _draw_text(img: Image.Image, text: str, cfg: ImageConfig, fonts_dir: Path) -
     max_width = cfg.width - 2 * cfg.margin
 
     wrapped = textwrap.fill(text, width=28)
-    text_width, text_height = draw.multiline_textsize(wrapped, font=font, spacing=10)
+    text_width, text_height = _measure_multiline_text(draw, wrapped, font=font, spacing=10)
 
     x = (cfg.width - text_width) / 2
     y = (cfg.height - text_height) / 2
 
     draw.multiline_text((x, y), wrapped, font=font, fill=cfg.palette_primary, spacing=10, align="center")
+
+
+def _measure_multiline_text(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.ImageFont, spacing: int) -> tuple[int, int]:
+    """Calcula tamanho de texto multilinha compatível com Pillow 10+."""
+
+    if hasattr(draw, "multiline_textbbox"):
+        bbox = draw.multiline_textbbox((0, 0), text, font=font, spacing=spacing, align="center")
+        return bbox[2] - bbox[0], bbox[3] - bbox[1]
+
+    lines = text.splitlines() or [""]
+    widths = []
+    heights = []
+
+    for line in lines:
+        # getbbox oferece suporte nas versões antigas; fallback para getsize se necessário
+        if hasattr(font, "getbbox"):
+            bbox = font.getbbox(line or " ")
+            width, height = bbox[2] - bbox[0], bbox[3] - bbox[1]
+        else:
+            width, height = font.getsize(line or " ")  # type: ignore[attr-defined]
+        widths.append(width)
+        heights.append(height)
+
+    total_height = sum(heights) + spacing * (len(lines) - 1 if len(lines) > 1 else 0)
+    return (max(widths) if widths else 0, total_height)
 
 
 def _apply_logo(img: Image.Image, logo_path: Path, cfg: ImageConfig) -> None:
