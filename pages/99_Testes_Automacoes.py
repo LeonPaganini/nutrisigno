@@ -66,8 +66,9 @@ get_posts_due = getattr(schedule_module, "get_posts_due")
 schedule_posts_for_range = getattr(schedule_module, "schedule_posts_for_range")
 
 instagram_module = importlib.import_module(f"{BACKEND_PREFIX}.post_instagram")
-publish_due_posts = getattr(instagram_module, "publish_due_posts")
+publish_due_posts_via_api = getattr(instagram_module, "publish_due_posts_via_api")
 simulate_publish_due = getattr(instagram_module, "simulate_publish_due", None)
+selenium_available = getattr(instagram_module, "HAS_SELENIUM", False)
 if simulate_publish_due is None:
     def simulate_publish_due(config: AppConfig | None = None) -> list[int]:
         due = get_posts_due(config=config)
@@ -432,11 +433,18 @@ def render_publish_tab(cfg: AppConfig) -> None:
             log_event(f"Simulação de publicação para {len(due_posts)} post(s)")
 
     st.divider()
-    st.markdown("### Publicação REAL")
+    st.markdown("### Publicação REAL (API Meta)")
     st.warning(
-        "Esta ação usará a conta real configurada. Utilize somente se tiver certeza e com credenciais válidas.",
+        "Esta ação usará a conta real configurada via API oficial da Meta. Utilize somente se tiver certeza e com credenciais válidas.",
         icon="⚠️",
     )
+    st.info(
+        "Automação via Selenium está desativada neste ambiente; a publicação real ocorrerá apenas via API.",
+        icon="ℹ️",
+    )
+    if not selenium_available:
+        st.caption("Modo legado Selenium indisponível (pacote não instalado ou desativado).")
+
     confirm = st.checkbox("Eu entendo que isso vai postar na conta real")
     if st.button("Publicar posts vencidos (MODO REAL)", type="primary"):
         if not confirm:
@@ -444,10 +452,12 @@ def render_publish_tab(cfg: AppConfig) -> None:
         elif not due_posts:
             st.info("Nenhum post vencido no momento.")
         else:
-            with st.spinner("Publicando com Selenium..."):
-                publish_due_posts(config=cfg)
+            with st.spinner("Publicando via API Meta..."):
+                result = publish_due_posts_via_api(config=cfg)
             st.success("Processo de publicação real finalizado.")
-            log_event("Publicação real disparada via painel")
+            if result:
+                st.json(result)
+            log_event("Publicação real disparada via API Meta")
 
 
 
