@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import importlib
 import importlib.util
+import logging
 import sys
 from dataclasses import replace
 from datetime import date, datetime, time, timedelta
@@ -36,6 +37,8 @@ def _select_backend_prefix() -> str:
 
 BACKEND_PREFIX = _select_backend_prefix()
 
+LOGGER = logging.getLogger(__name__)
+
 config_module = importlib.import_module(f"{BACKEND_PREFIX}.config")
 AppConfig = getattr(config_module, "AppConfig")
 load_config = getattr(config_module, "load_config")
@@ -60,6 +63,9 @@ validate_post = getattr(validate_module, "validate_post")
 render_module = importlib.import_module(f"{BACKEND_PREFIX}.render_images")
 render_all_validated_posts = getattr(render_module, "render_all_validated_posts")
 render_post_image = getattr(render_module, "render_post_image")
+
+watercolor_module = importlib.import_module(f"{BACKEND_PREFIX}.render_watercolor")
+render_watercolor_post = getattr(watercolor_module, "render_watercolor_post")
 
 schedule_module = importlib.import_module(f"{BACKEND_PREFIX}.schedule_queue")
 get_posts_due = getattr(schedule_module, "get_posts_due")
@@ -289,7 +295,7 @@ def render_pipeline_tab(cfg: AppConfig) -> None:
             st.success(f"{len(entries)} entradas adicionadas como rascunho.")
             log_event(f"Calendário de {dias} dia(s) gerado para testes")
 
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
     with col1:
         if st.button("Gerar textos IA", key="btn_generate"):
             with st.spinner("Gerando conteúdo para rascunhos..."):
@@ -308,6 +314,27 @@ def render_pipeline_tab(cfg: AppConfig) -> None:
                 render_all_validated_posts(config=cfg)
             st.success("Renderização finalizada.")
             log_event("Renderização executada")
+    with col4:
+        if st.button("Gerar Imagem Profissional (Watercolor)", key="btn_render_watercolor"):
+            posts = fetch_posts(cfg, status=PostStatus.VALIDADO)
+            if not posts:
+                st.info("Nenhum post validado disponível para renderização profissional.")
+            else:
+                post = posts[0]
+                output_path = cfg.paths.renders_dir / f"professional_watercolor_post_{post['id']}.png"
+                try:
+                    generated_path = render_watercolor_post(
+                        post.get("texto_imagem") or "",
+                        post.get("legenda") or "",
+                        str(cfg.paths.logo_path),
+                        output_path,
+                    )
+                    st.image(generated_path, caption="Prévia da imagem profissional")
+                    st.success(f"Render profissional gerada em {generated_path}")
+                    log_event(f"Render watercolor executada para post {post['id']}")
+                except Exception as exc:  # noqa: BLE001
+                    LOGGER.exception("Erro na renderização profissional: %s", exc)
+                    st.error(str(exc))
 
     st.divider()
     st.markdown("#### Agendamento")
